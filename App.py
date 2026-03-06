@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import re
 import os
-import plotly.express as px  # NUEVA LIBRERÍA PARA GRÁFICOS
 
 st.set_page_config(page_title="Reporte de DCPD", layout="wide")
 st.title("📊 Reporte de DCPD (valores Acreditados y Rechazados)")
@@ -88,18 +87,27 @@ def fmt_monto(x):
         return "$ 0"
 
 # -----------------------------
-# Mostrar tabla (Fuente grande + Índice 1 en adelante + Altura dinámica)
+# Mostrar tabla (Fuente ampliada + Ancho al texto + Índice 1 en adelante + Altura dinámica)
 # -----------------------------
 def mostrar_tabla_estilizada(df_to_show):
     df_to_show = df_to_show.copy()
+    
+    # Asignar explícitamente el índice del 1 en adelante
     df_to_show.index = range(1, len(df_to_show) + 1)
+            
+    # Agrandar la fuente y forzar que no se corte el texto (nowrap)
     styled = df_to_show.style.set_properties(**{
-        'font-size': '15px'
+        'font-size': '16px',
+        'white-space': 'nowrap'
     }).set_table_styles([
-        {'selector': 'th', 'props': [('font-size', '15px')]}
+        {'selector': 'th', 'props': [('font-size', '16px'), ('white-space', 'nowrap')]}
     ])
-    altura_dinamica = min(400, 40 + (len(df_to_show) * 36))
-    st.dataframe(styled, use_container_width=True, height=altura_dinamica)
+    
+    # Calcular altura dinámica: ~45px encabezado + ~36px por fila. Tope máximo de 400px (aprox 10 filas)
+    altura_dinamica = min(400, 45 + (len(df_to_show) * 36))
+    
+    # Al no usar use_container_width=True, Streamlit ajusta las columnas al contenido
+    st.dataframe(styled, height=altura_dinamica)
 
 # -----------------------------
 # Filtro y preparador para Datos Crudos
@@ -119,8 +127,10 @@ def preparar_datos_crudos(df_in):
         "Estado": "Estado",
         "Motivo Rechazo": "Motivo Rechazo"
     }
+    
     cols_encontradas = []
     renombres = {}
+    
     for col_original in df_in.columns:
         if col_original in mapeo_columnas:
             cols_encontradas.append(col_original)
@@ -140,6 +150,7 @@ def preparar_datos_crudos(df_in):
     
     df_final = df_out[orden_final]
     df_final.index = range(1, len(df_final) + 1)
+    
     return df_final
 
 
@@ -178,9 +189,12 @@ if uploaded_file:
     # --- Totales ---
     total_acreditado = df.loc[df["Estado"] == "ACREDITADO", "Monto"].sum()
     mask_rechazo = df["Estado"] == "RECHAZADO"
+    
+    # Buscar tanto R10 como R21
     mask_r10_r21 = mask_rechazo & df["Motivo Rechazo"].str.contains(r"R10|R21", na=False, regex=True)
     rechazados_r10_r21 = df.loc[mask_r10_r21, "Monto"].sum()
 
+    # Total operado = acreditado + rechazado R10/R21
     total_operado = total_acreditado + rechazados_r10_r21
 
     pct_acreditado = (total_acreditado / total_operado * 100) if total_operado > 0 else 0.0
@@ -237,19 +251,6 @@ if uploaded_file:
     colA.markdown(f"<div style='font-size:26px; font-weight:bold; color:green;'>✅ % Acreditado: {pct_acreditado:.2f}%</div>", unsafe_allow_html=True)
     colB.markdown(f"<div style='font-size:26px; font-weight:bold; color:green;'>❌ % Rechazados (R10/R21): {pct_r10_r21:.2f}%</div>", unsafe_allow_html=True)
 
-    # --- GRÁFICO DE ANILLO GLOBAL ---
-    if total_operado > 0:
-        fig_donut = px.pie(
-            values=[total_acreditado, rechazados_r10_r21],
-            names=["Acreditado", "Rechazado (R10/R21)"],
-            hole=0.45,
-            color=["Acreditado", "Rechazado (R10/R21)"],
-            color_discrete_map={"Acreditado": "#2ca02c", "Rechazado (R10/R21)": "#d62728"},
-            title="Composición de la Cartera Operada"
-        )
-        fig_donut.update_traces(textposition='inside', textinfo='percent+label')
-        st.plotly_chart(fig_donut, use_container_width=True)
-
     # -----------------------------
     # Tabla de firmantes (Acreditados + R10/R21)
     # -----------------------------
@@ -273,14 +274,14 @@ if uploaded_file:
 
     firmantes = firmantes.sort_values("Total_Firmante", ascending=False).reset_index(drop=True)
 
-    firmantes_disp = firmantes.copy()
-    firmantes_disp["ACREDITADO"] = firmantes_disp["ACREDITADO"].apply(fmt_monto)
-    firmantes_disp["RECHAZADO R10/R21"] = firmantes_disp["RECHAZADO R10/R21"].apply(fmt_monto)
-    firmantes_disp["Total_Firmante"] = firmantes_disp["Total_Firmante"].apply(fmt_monto)
-    firmantes_disp["% Concentración"] = firmantes_disp["% Concentración"].apply(lambda x: f"{x:.2f}%")
+    firmantes["ACREDITADO"] = firmantes["ACREDITADO"].apply(fmt_monto)
+    firmantes["RECHAZADO R10/R21"] = firmantes["RECHAZADO R10/R21"].apply(fmt_monto)
+    firmantes["Total_Firmante"] = firmantes["Total_Firmante"].apply(fmt_monto)
+    firmantes["% Concentración"] = firmantes["% Concentración"].apply(lambda x: f"{x:.2f}%")
 
+    # MUESTRA TODOS LOS FIRMANTES GLOBALES (ALTURA DINÁMICA HASTA ~10 FILAS)
     st.subheader("👤 Top 10 Firmantes (sobre total operado)")
-    mostrar_tabla_estilizada(firmantes_disp)
+    mostrar_tabla_estilizada(firmantes)
 
     st.download_button(
         "⬇️ Descargar reporte firmantes (ACR + R10/R21) CSV Completo",
@@ -303,44 +304,32 @@ if uploaded_file:
         .sort_values("Monto", ascending=False)
     )
 
-    # --- GRÁFICO DE BARRAS: TOP FIRMANTES RECHAZADOS ---
-    if not firmantes_r10_r21.empty:
-        top_rechazos_chart = firmantes_r10_r21.head(10).sort_values("Monto", ascending=True) # Ascendente para que el mayor quede arriba en Plotly
-        fig_bar = px.bar(
-            top_rechazos_chart, 
-            x="Monto", 
-            y="Den. Firmante", 
-            orientation='h', 
-            title="Concentración de Riesgo: Top Firmantes con Rechazos R10/R21",
-            text="Monto"
-        )
-        fig_bar.update_traces(marker_color='#d62728', texttemplate='%{text:$.3s}', textposition='outside')
-        fig_bar.update_layout(xaxis_title="Monto Rechazado ($)", yaxis_title="Firmante")
-        st.plotly_chart(fig_bar, use_container_width=True)
+    firmantes_r10_r21["% Concentración"] = firmantes_r10_r21["Monto"] / rechazados_r10_r21 * 100 if rechazados_r10_r21 > 0 else 0
+    firmantes_r10_r21["Monto"] = firmantes_r10_r21["Monto"].apply(fmt_monto)
+    firmantes_r10_r21["% Concentración"] = firmantes_r10_r21["% Concentración"].apply(lambda x: f"{x:.2f}%")
+    
+    firmantes_r10_r21 = firmantes_r10_r21[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
 
-    # Continuación tabla rechazos
-    if not firmantes_r10_r21.empty:
-        firmantes_r10_r21_disp = firmantes_r10_r21.copy()
-        firmantes_r10_r21_disp["% Concentración"] = firmantes_r10_r21_disp["Monto"] / rechazados_r10_r21 * 100 if rechazados_r10_r21 > 0 else 0
-        firmantes_r10_r21_disp["Monto"] = firmantes_r10_r21_disp["Monto"].apply(fmt_monto)
-        firmantes_r10_r21_disp["% Concentración"] = firmantes_r10_r21_disp["% Concentración"].apply(lambda x: f"{x:.2f}%")
-        firmantes_r10_r21_disp = firmantes_r10_r21_disp[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
+    # MUESTRA TODOS LOS RECHAZOS GLOBALES (ALTURA DINÁMICA HASTA ~10 FILAS)
+    st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21)")
+    mostrar_tabla_estilizada(firmantes_r10_r21)
 
-        st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21)")
-        mostrar_tabla_estilizada(firmantes_r10_r21_disp)
-
-        st.download_button(
-            "⬇️ Descargar reporte firmantes SOLO R10/R21 CSV Completo",
-            firmantes_r10_r21.to_csv(index=False).encode("utf-8"),
-            "reporte_firmantes_r10_r21.csv",
-            "text/csv"
-        )
+    st.download_button(
+        "⬇️ Descargar reporte firmantes SOLO R10/R21 CSV Completo",
+        firmantes_r10_r21.to_csv(index=False).encode("utf-8"),
+        "reporte_firmantes_r10_r21.csv",
+        "text/csv"
+    )
 
     # -----------------------------
     # Datos crudos filtrados (GLOBAL)
     # -----------------------------
     with st.expander("🗂️ Ver datos crudos filtrados (Tipo Op. = CO, ACR + R10/R21)"):
-        st.dataframe(preparar_datos_crudos(df_firmantes), use_container_width=True)
+        df_crudos_glob = preparar_datos_crudos(df_firmantes)
+        styled_crudos_glob = df_crudos_glob.style.set_properties(**{
+            'font-size': '15px', 'white-space': 'nowrap'
+        }).set_table_styles([{'selector': 'th', 'props': [('font-size', '15px'), ('white-space', 'nowrap')]}])
+        st.dataframe(styled_crudos_glob)
 
     # =========================================================================
     # SECCIÓN: ANÁLISIS DE LOS ÚLTIMOS 4 MESES 
@@ -374,30 +363,11 @@ if uploaded_file:
             
             df_4m_fechas = df_4m.copy()
             df_4m_fechas["Fecha Acreditación"] = pd.to_datetime(df_4m_fechas["Fecha Acreditación"], errors="coerce")
-            df_4m_fechas["Mes_Anio"] = df_4m_fechas["Fecha Acreditación"].dt.strftime('%Y-%m') # Ordenable cronológicamente
-            
+            df_4m_fechas["Mes_Anio"] = df_4m_fechas["Fecha Acreditación"].dt.strftime('%m-%Y')
             rechazos_por_mes = df_4m_fechas[mask_r10_r21_4m].groupby("Mes_Anio")["Monto"].sum()
             
-            # --- GRÁFICO: EVOLUCIÓN DE RECHAZOS EN LOS 4 MESES ---
-            if not rechazos_por_mes.empty:
-                df_evolucion = rechazos_por_mes.reset_index()
-                fig_evo = px.bar(
-                    df_evolucion, 
-                    x="Mes_Anio", 
-                    y="Monto", 
-                    title="Evolución de Montos Rechazados (Últimos 4 Meses)",
-                    text="Monto"
-                )
-                fig_evo.update_traces(marker_color='#d62728', texttemplate='%{text:$.3s}', textposition='outside')
-                fig_evo.update_layout(xaxis_title="Mes", yaxis_title="Monto Rechazado ($)")
-                st.plotly_chart(fig_evo, use_container_width=True)
-
-            # Texto resumen de concentración (Volvemos a formato %m-%Y para que sea más legible en el texto)
-            df_4m_fechas["Mes_Anio_Texto"] = df_4m_fechas["Fecha Acreditación"].dt.strftime('%m-%Y')
-            rechazos_por_mes_texto = df_4m_fechas[mask_r10_r21_4m].groupby("Mes_Anio_Texto")["Monto"].sum()
-
-            if not rechazos_por_mes_texto.empty and rechazados_r10_r21_4m > 0:
-                meses_pct = (rechazos_por_mes_texto / rechazados_r10_r21_4m * 100).sort_values(ascending=False)
+            if not rechazos_por_mes.empty and rechazados_r10_r21_4m > 0:
+                meses_pct = (rechazos_por_mes / rechazados_r10_r21_4m * 100).sort_values(ascending=False)
                 meses_pct_int = meses_pct.round().astype(int)
                 
                 diferencia = 100 - meses_pct_int.sum()
@@ -449,6 +419,7 @@ if uploaded_file:
             firmantes_4m_disp["Total_Firmante"] = firmantes_4m_disp["Total_Firmante"].apply(fmt_monto)
             firmantes_4m_disp["% Concentración"] = firmantes_4m_disp["% Concentración"].apply(lambda x: f"{x:.2f}%")
 
+            # MUESTRA TODOS LOS FIRMANTES 4 MESES (ALTURA DINÁMICA HASTA ~10 FILAS)
             st.subheader("👤 Top 10 Firmantes (sobre total operado) - Últimos 4 Meses")
             mostrar_tabla_estilizada(firmantes_4m_disp)
 
@@ -465,15 +436,15 @@ if uploaded_file:
             )
 
             if not firmantes_r10_r21_4m.empty:
-                firmantes_r10_r21_4m_disp = firmantes_r10_r21_4m.copy()
-                firmantes_r10_r21_4m_disp["% Concentración"] = firmantes_r10_r21_4m_disp["Monto"] / rechazados_r10_r21_4m * 100 if rechazados_r10_r21_4m > 0 else 0
-                firmantes_r10_r21_4m_disp["Monto"] = firmantes_r10_r21_4m_disp["Monto"].apply(fmt_monto)
-                firmantes_r10_r21_4m_disp["% Concentración"] = firmantes_r10_r21_4m_disp["% Concentración"].apply(lambda x: f"{x:.2f}%")
+                firmantes_r10_r21_4m["% Concentración"] = firmantes_r10_r21_4m["Monto"] / rechazados_r10_r21_4m * 100 if rechazados_r10_r21_4m > 0 else 0
+                firmantes_r10_r21_4m["Monto"] = firmantes_r10_r21_4m["Monto"].apply(fmt_monto)
+                firmantes_r10_r21_4m["% Concentración"] = firmantes_r10_r21_4m["% Concentración"].apply(lambda x: f"{x:.2f}%")
                 
-                firmantes_r10_r21_4m_disp = firmantes_r10_r21_4m_disp[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
+                firmantes_r10_r21_4m = firmantes_r10_r21_4m[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
 
+                # MUESTRA TODOS LOS RECHAZOS 4 MESES (ALTURA DINÁMICA HASTA ~10 FILAS)
                 st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21) - Últimos 4 Meses")
-                mostrar_tabla_estilizada(firmantes_r10_r21_4m_disp)
+                mostrar_tabla_estilizada(firmantes_r10_r21_4m)
             else:
                 st.success("No hay rechazos R10 ni R21 en los últimos 4 meses.")
 
@@ -481,4 +452,8 @@ if uploaded_file:
             # Datos crudos filtrados (ÚLTIMOS 4 MESES)
             # -----------------------------
             with st.expander("🗂️ Ver datos crudos filtrados (Tipo Op. = CO, ACR + R10/R21) - Últimos 4 Meses"):
-                st.dataframe(preparar_datos_crudos(df_firmantes_4m), use_container_width=True)
+                df_crudos_4m = preparar_datos_crudos(df_firmantes_4m)
+                styled_crudos_4m = df_crudos_4m.style.set_properties(**{
+                    'font-size': '15px', 'white-space': 'nowrap'
+                }).set_table_styles([{'selector': 'th', 'props': [('font-size', '15px'), ('white-space', 'nowrap')]}])
+                st.dataframe(styled_crudos_4m)
