@@ -87,9 +87,9 @@ def fmt_monto(x):
         return "$ 0"
 
 # -----------------------------
-# Mostrar tabla (Fuente grande + Índice 1 en adelante + Scroll altura fija)
+# Mostrar tabla (Fuente grande + Índice 1 en adelante + Altura dinámica)
 # -----------------------------
-def mostrar_tabla_estilizada(df_to_show, height=400):
+def mostrar_tabla_estilizada(df_to_show):
     df_to_show = df_to_show.copy()
     
     # Asignar explícitamente el índice del 1 en adelante
@@ -102,8 +102,11 @@ def mostrar_tabla_estilizada(df_to_show, height=400):
         {'selector': 'th', 'props': [('font-size', '15px')]}
     ])
     
-    # Pasamos el height para limitar lo que se ve y forzar el scroll
-    st.dataframe(styled, use_container_width=True, height=height)
+    # Calcular altura dinámica: ~40px encabezado + ~36px por fila. Tope máximo de 400px (aprox 10 filas)
+    altura_dinamica = min(400, 40 + (len(df_to_show) * 36))
+    
+    # Aplicar la altura calculada dinámicamente
+    st.dataframe(styled, use_container_width=True, height=altura_dinamica)
 
 # -----------------------------
 # Filtro y preparador para Datos Crudos
@@ -275,9 +278,9 @@ if uploaded_file:
     firmantes["Total_Firmante"] = firmantes["Total_Firmante"].apply(fmt_monto)
     firmantes["% Concentración"] = firmantes["% Concentración"].apply(lambda x: f"{x:.2f}%")
 
-    # MUESTRA TODOS LOS FIRMANTES GLOBALES CON SCROLL (TÍTULO SOLICITADO MANTENIDO)
+    # MUESTRA TODOS LOS FIRMANTES GLOBALES (ALTURA DINÁMICA HASTA ~10 FILAS)
     st.subheader("👤 Top 10 Firmantes (sobre total operado)")
-    mostrar_tabla_estilizada(firmantes, height=400)
+    mostrar_tabla_estilizada(firmantes)
 
     st.download_button(
         "⬇️ Descargar reporte firmantes (ACR + R10/R21) CSV Completo",
@@ -306,9 +309,9 @@ if uploaded_file:
     
     firmantes_r10_r21 = firmantes_r10_r21[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
 
-    # MUESTRA TODOS LOS RECHAZOS GLOBALES CON SCROLL
+    # MUESTRA TODOS LOS RECHAZOS GLOBALES (ALTURA DINÁMICA HASTA ~10 FILAS)
     st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21)")
-    mostrar_tabla_estilizada(firmantes_r10_r21, height=400)
+    mostrar_tabla_estilizada(firmantes_r10_r21)
 
     st.download_button(
         "⬇️ Descargar reporte firmantes SOLO R10/R21 CSV Completo",
@@ -411,9 +414,9 @@ if uploaded_file:
             firmantes_4m_disp["Total_Firmante"] = firmantes_4m_disp["Total_Firmante"].apply(fmt_monto)
             firmantes_4m_disp["% Concentración"] = firmantes_4m_disp["% Concentración"].apply(lambda x: f"{x:.2f}%")
 
-            # MUESTRA TODOS LOS FIRMANTES 4 MESES CON SCROLL (TÍTULO SOLICITADO MANTENIDO)
+            # MUESTRA TODOS LOS FIRMANTES 4 MESES (ALTURA DINÁMICA HASTA ~10 FILAS)
             st.subheader("👤 Top 10 Firmantes (sobre total operado) - Últimos 4 Meses")
-            mostrar_tabla_estilizada(firmantes_4m_disp, height=400)
+            mostrar_tabla_estilizada(firmantes_4m_disp)
 
             # Tabla de firmantes SOLO R10/R21 - 4M (Agregado Motivo)
             firmantes_r10_r21_4m = (
@@ -434,9 +437,9 @@ if uploaded_file:
                 
                 firmantes_r10_r21_4m = firmantes_r10_r21_4m[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
 
-                # MUESTRA TODOS LOS RECHAZOS 4 MESES CON SCROLL
+                # MUESTRA TODOS LOS RECHAZOS 4 MESES (ALTURA DINÁMICA HASTA ~10 FILAS)
                 st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21) - Últimos 4 Meses")
-                mostrar_tabla_estilizada(firmantes_r10_r21_4m, height=400)
+                mostrar_tabla_estilizada(firmantes_r10_r21_4m)
             else:
                 st.success("No hay rechazos R10 ni R21 en los últimos 4 meses.")
 
