@@ -289,6 +289,12 @@ if uploaded_file:
     st.subheader("👤 Top 10 Firmantes (sobre total operado)")
     mostrar_tabla_estilizada(firmantes)
 
+    # FRASE RESUMEN GLOBAL DINÁMICA
+    if rechazados_r10_r21 == 0:
+        st.info(f"**Descontó {cant_total_operado} valores por un total de {fmt_monto(total_operado)} sin registrar rechazos.**")
+    else:
+        st.info(f"**Descontó {cant_total_operado} valores por un total de {fmt_monto(total_operado)} con un margen de rechazos del {pct_r10_r21:.2f}%.**")
+
     # -----------------------------
     # Tabla de firmantes SOLO R10/R21 (Agregado Motivo)
     # -----------------------------
