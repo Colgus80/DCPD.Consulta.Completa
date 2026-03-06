@@ -323,11 +323,9 @@ if uploaded_file:
     firmante_seleccionado_global = st.selectbox("Elegí un Firmante:", ["-- Seleccionar Firmante --"] + lista_firmantes_global, key="visor_global")
     
     if firmante_seleccionado_global != "-- Seleccionar Firmante --":
-        # Filtramos los datos crudos solo para ese firmante
         df_firmante_especifico = df_firmantes[df_firmantes["Den. Firmante"] == firmante_seleccionado_global]
         df_crudos_firmante = preparar_datos_crudos(df_firmante_especifico)
         
-        # Le aplicamos el mismo estilo grande
         styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '16px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '16px')]}])
         st.dataframe(
             styled_crudos,
@@ -359,34 +357,43 @@ if uploaded_file:
         pct_acreditado_4m = (total_acreditado_4m / total_operado_4m * 100) if total_operado_4m > 0 else 0.0
         pct_r10_r21_4m = (rechazados_r10_r21_4m / total_operado_4m * 100) if total_operado_4m > 0 else 0.0
 
-        if total_operado_4m > 0:
-            st.markdown(
-                f"""
-                <div style="font-size:24px; font-weight:bold; color:#d62728; margin-bottom:10px;">
-                🔎 Foco de Riesgo: Últimos 4 Meses (Desde {min_date_4m.strftime('%d/%m/%Y')} hasta Hoy)
-                </div>
-                """, unsafe_allow_html=True
-            )
-            
-            df_4m_fechas = df_4m.copy()
-            df_4m_fechas["Fecha Acreditación"] = pd.to_datetime(df_4m_fechas["Fecha Acreditación"], errors="coerce")
-            df_4m_fechas["Mes_Anio"] = df_4m_fechas["Fecha Acreditación"].dt.strftime('%m-%Y')
-            rechazos_por_mes = df_4m_fechas[mask_r10_r21_4m].groupby("Mes_Anio")["Monto"].sum()
-            
-            if not rechazos_por_mes.empty and rechazados_r10_r21_4m > 0:
-                meses_pct = (rechazos_por_mes / rechazados_r10_r21_4m * 100).sort_values(ascending=False)
-                meses_pct_int = meses_pct.round().astype(int)
-                
-                diferencia = 100 - meses_pct_int.sum()
-                if diferencia != 0 and len(meses_pct_int) > 0:
-                    meses_pct_int.iloc[0] += diferencia
+        # El título siempre aparece si hubo un rechazo global
+        st.markdown(
+            f"""
+            <div style="font-size:24px; font-weight:bold; color:#d62728; margin-bottom:10px;">
+            🔎 Foco de Riesgo: Últimos 4 Meses (Desde {min_date_4m.strftime('%d/%m/%Y')} hasta Hoy)
+            </div>
+            """, unsafe_allow_html=True
+        )
 
-                str_meses = ", ".join([f"{mes} ({pct}%)" for mes, pct in meses_pct_int.items()])
+        # Evaluar los 3 escenarios
+        if total_operado_4m == 0:
+            st.info("Durante los últimos 4 meses no ha registrado operatoria en DCPD")
+            
+        else:
+            if rechazados_r10_r21_4m == 0:
+                st.info(f"Durante los últimos 4 meses la operatoria en DCPD totalizó **{fmt_monto(total_operado_4m)}**, sin registrar rechazos.")
             else:
-                str_meses = "Ninguno (0%)"
+                df_4m_fechas = df_4m.copy()
+                df_4m_fechas["Fecha Acreditación"] = pd.to_datetime(df_4m_fechas["Fecha Acreditación"], errors="coerce")
+                df_4m_fechas["Mes_Anio"] = df_4m_fechas["Fecha Acreditación"].dt.strftime('%m-%Y')
+                rechazos_por_mes = df_4m_fechas[mask_r10_r21_4m].groupby("Mes_Anio")["Monto"].sum()
+                
+                if not rechazos_por_mes.empty:
+                    meses_pct = (rechazos_por_mes / rechazados_r10_r21_4m * 100).sort_values(ascending=False)
+                    meses_pct_int = meses_pct.round().astype(int)
+                    
+                    diferencia = 100 - meses_pct_int.sum()
+                    if diferencia != 0 and len(meses_pct_int) > 0:
+                        meses_pct_int.iloc[0] += diferencia
 
-            st.info(f"**Durante los últimos 4 meses la operatoria en DCPD totalizó {fmt_monto(total_operado_4m)}, con un margen de rechazos del {pct_r10_r21_4m:.2f}%, concentrados en los meses de {str_meses}.**")
+                    str_meses = ", ".join([f"{mes} ({pct}%)" for mes, pct in meses_pct_int.items()])
+                else:
+                    str_meses = "Ninguno (0%)"
 
+                st.info(f"**Durante los últimos 4 meses la operatoria en DCPD totalizó {fmt_monto(total_operado_4m)}, con un margen de rechazos del {pct_r10_r21_4m:.2f}%, concentrados en los meses de {str_meses}.**")
+
+            # Renderizamos las métricas y cuadros correspondientes a los 4 meses
             cant_total_operado_4m = len(df_4m[(df_4m["Estado"] == "ACREDITADO") | mask_r10_r21_4m])
             cant_acreditados_4m = len(df_4m[df_4m["Estado"] == "ACREDITADO"])
             cant_r10_r21_4m = len(df_4m[mask_r10_r21_4m])
@@ -429,7 +436,7 @@ if uploaded_file:
             st.subheader("👤 Top 10 Firmantes (sobre total operado) - Últimos 4 Meses")
             mostrar_tabla_estilizada(firmantes_4m_disp)
 
-            # Tabla de firmantes SOLO R10/R21 - 4M (Agregado Motivo)
+            # Tabla de firmantes SOLO R10/R21 - 4M
             firmantes_r10_r21_4m = (
                 df_4m[mask_r10_r21_4m].groupby("Den. Firmante")
                 .agg(
