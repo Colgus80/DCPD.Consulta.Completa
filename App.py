@@ -87,40 +87,26 @@ def fmt_monto(x):
         return "$ 0"
 
 # -----------------------------
-# Función para tablas HTML personalizadas (Ideal para Capturas de Pantalla)
+# Función para mostrar tabla estilizada en Streamlit (Texto más grande y sin índice)
 # -----------------------------
-def mostrar_tabla_ampliada(df):
-    html = df.to_html(index=False, escape=False)
-    # Reemplazamos las clases por defecto de pandas por unas propias para aplicar CSS
-    html = html.replace('<table border="1" class="dataframe">', '<table class="report-table">')
+def mostrar_tabla_estilizada(df_to_show):
+    # Intentar ocultar el índice dependiendo de la versión de Pandas
+    try:
+        styled = df_to_show.style.hide(axis="index")
+    except:
+        try:
+            styled = df_to_show.style.hide_index()
+        except:
+            styled = df_to_show.style
+            
+    # Agrandar la fuente usando propiedades nativas
+    styled = styled.set_properties(**{
+        'font-size': '15px'
+    }).set_table_styles([
+        {'selector': 'th', 'props': [('font-size', '15px')]}
+    ])
     
-    css = """
-    <style>
-    .report-table {
-        width: 100%;
-        border-collapse: collapse;
-        font-family: sans-serif;
-        font-size: 16px; /* Letra más grande */
-        background-color: #ffffff;
-        color: #000000;
-        margin-bottom: 20px;
-    }
-    .report-table th {
-        background-color: #f0f2f6;
-        color: #31333F;
-        font-weight: bold;
-        text-align: left;
-        padding: 12px;
-        border: 1px solid #dcdcdc;
-    }
-    .report-table td {
-        padding: 10px 12px;
-        border: 1px solid #dcdcdc;
-        text-align: left;
-    }
-    </style>
-    """
-    st.markdown(css + html, unsafe_allow_html=True)
+    st.dataframe(styled, use_container_width=True)
 
 # -----------------------------
 # Main
@@ -202,24 +188,15 @@ if uploaded_file:
 
     with col1:
         st.metric("📦 Total Operado", fmt_monto(total_operado))
-        st.markdown(
-            f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_total_operado}</b></div>",
-            unsafe_allow_html=True
-        )
+        st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_total_operado}</b></div>", unsafe_allow_html=True)
 
     with col2:
         st.metric("💰 Total Acreditado", fmt_monto(total_acreditado))
-        st.markdown(
-            f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_acreditados}</b></div>",
-            unsafe_allow_html=True
-        )
+        st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_acreditados}</b></div>", unsafe_allow_html=True)
 
     with col3:
         st.metric("❌ Rechazados (R10/R21)", fmt_monto(rechazados_r10_r21))
-        st.markdown(
-            f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_r10_r21}</b></div>",
-            unsafe_allow_html=True
-        )
+        st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_r10_r21}</b></div>", unsafe_allow_html=True)
 
     # -----------------------------
     # % Acreditado y Rechazado
@@ -233,8 +210,7 @@ if uploaded_file:
     # -----------------------------
     df_firmantes = df[(df["Estado"] == "ACREDITADO") | (mask_r10_r21)].copy()
     df_firmantes["Tipo"] = df_firmantes.apply(
-        lambda row: "ACREDITADO" if row["Estado"] == "ACREDITADO" else "RECHAZADO R10/R21",
-        axis=1
+        lambda row: "ACREDITADO" if row["Estado"] == "ACREDITADO" else "RECHAZADO R10/R21", axis=1
     )
 
     firmantes = (
@@ -244,10 +220,8 @@ if uploaded_file:
         .reset_index()
     )
 
-    if "ACREDITADO" not in firmantes.columns:
-        firmantes["ACREDITADO"] = 0
-    if "RECHAZADO R10/R21" not in firmantes.columns:
-        firmantes["RECHAZADO R10/R21"] = 0
+    if "ACREDITADO" not in firmantes.columns: firmantes["ACREDITADO"] = 0
+    if "RECHAZADO R10/R21" not in firmantes.columns: firmantes["RECHAZADO R10/R21"] = 0
 
     firmantes["Total_Firmante"] = firmantes["ACREDITADO"] + firmantes["RECHAZADO R10/R21"]
     firmantes["% Concentración"] = firmantes["Total_Firmante"] / total_operado * 100
@@ -259,11 +233,12 @@ if uploaded_file:
     firmantes["Total_Firmante"] = firmantes["Total_Firmante"].apply(fmt_monto)
     firmantes["% Concentración"] = firmantes["% Concentración"].apply(lambda x: f"{x:.2f}%")
 
-    st.subheader("👤 Totales por Firmante (sobre total operado)")
-    mostrar_tabla_ampliada(firmantes)
+    # MUESTRA EL TOP 10 DE FIRMANTES GLOBALES
+    st.subheader("👤 Top 10 Firmantes (sobre total operado)")
+    mostrar_tabla_estilizada(firmantes.head(10))
 
     st.download_button(
-        "⬇️ Descargar reporte firmantes (ACR + R10/R21) CSV",
+        "⬇️ Descargar reporte firmantes (ACR + R10/R21) CSV Completo",
         firmantes.to_csv(index=False).encode("utf-8"),
         "reporte_firmantes_total.csv",
         "text/csv"
@@ -287,21 +262,21 @@ if uploaded_file:
     firmantes_r10_r21["Monto"] = firmantes_r10_r21["Monto"].apply(fmt_monto)
     firmantes_r10_r21["% Concentración"] = firmantes_r10_r21["% Concentración"].apply(lambda x: f"{x:.2f}%")
     
-    # Ordenar las columnas para visualizar mejor
     firmantes_r10_r21 = firmantes_r10_r21[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
 
-    st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21)")
-    mostrar_tabla_ampliada(firmantes_r10_r21)
+    # MUESTRA EL TOP 10 DE RECHAZOS GLOBALES
+    st.subheader("👤 Top 10 Firmantes (SOLO Rechazados R10 y R21)")
+    mostrar_tabla_estilizada(firmantes_r10_r21.head(10))
 
     st.download_button(
-        "⬇️ Descargar reporte firmantes SOLO R10/R21 CSV",
+        "⬇️ Descargar reporte firmantes SOLO R10/R21 CSV Completo",
         firmantes_r10_r21.to_csv(index=False).encode("utf-8"),
         "reporte_firmantes_r10_r21.csv",
         "text/csv"
     )
 
     # -----------------------------
-    # Datos crudos filtrados (Este lo mantenemos normal ya que es solo para inspeccionar)
+    # Datos crudos filtrados
     # -----------------------------
     with st.expander("🗂️ Ver datos crudos filtrados (Tipo Op. = CO, ACR + R10/R21)"):
         st.dataframe(df_firmantes, use_container_width=True)
@@ -312,16 +287,13 @@ if uploaded_file:
     if rechazados_r10_r21 > 0:
         st.markdown("---")
         
-        # Parsear las fechas temporalmente para filtrar sin afectar el dataframe original
         fechas_dt = pd.to_datetime(df["Fecha Acreditación"], errors="coerce")
         fecha_actual = pd.Timestamp.today().normalize()
         min_date_4m = fecha_actual - pd.DateOffset(months=4)
         
-        # Filtrar datos de los últimos 4 meses
         mask_fechas_4m = (fechas_dt >= min_date_4m) & (fechas_dt <= fecha_actual)
         df_4m = df[mask_fechas_4m].copy()
         
-        # Recalcular métricas para 4 meses con R10 y R21
         mask_r10_r21_4m = (df_4m["Estado"] == "RECHAZADO") & df_4m["Motivo Rechazo"].str.contains(r"R10|R21", na=False, regex=True)
         total_acreditado_4m = df_4m.loc[df_4m["Estado"] == "ACREDITADO", "Monto"].sum()
         rechazados_r10_r21_4m = df_4m.loc[mask_r10_r21_4m, "Monto"].sum()
@@ -339,7 +311,6 @@ if uploaded_file:
                 """, unsafe_allow_html=True
             )
             
-            # Calcular concentración de rechazos por mes para el texto (CON REDONDEO AL 100%)
             df_4m_fechas = df_4m.copy()
             df_4m_fechas["Fecha Acreditación"] = pd.to_datetime(df_4m_fechas["Fecha Acreditación"], errors="coerce")
             df_4m_fechas["Mes_Anio"] = df_4m_fechas["Fecha Acreditación"].dt.strftime('%m-%Y')
@@ -349,7 +320,6 @@ if uploaded_file:
                 meses_pct = (rechazos_por_mes / rechazados_r10_r21_4m * 100).sort_values(ascending=False)
                 meses_pct_int = meses_pct.round().astype(int)
                 
-                # Ajuste matemático para garantizar que la suma dé 100% exacto
                 diferencia = 100 - meses_pct_int.sum()
                 if diferencia != 0 and len(meses_pct_int) > 0:
                     meses_pct_int.iloc[0] += diferencia
@@ -358,10 +328,8 @@ if uploaded_file:
             else:
                 str_meses = "Ninguno (0%)"
 
-            # 1. TEXTO SOLICITADO
             st.info(f"**Durante los últimos 4 meses la operatoria en DCPD totalizó {fmt_monto(total_operado_4m)}, con un margen de rechazos del {pct_r10_r21_4m:.2f}%, concentrados en los meses de {str_meses}.**")
 
-            # 2. MISMA INFORMACIÓN QUE LA CONSULTA ORIGINAL (Para los últimos 4 meses)
             cant_total_operado_4m = len(df_4m[(df_4m["Estado"] == "ACREDITADO") | mask_r10_r21_4m])
             cant_acreditados_4m = len(df_4m[df_4m["Estado"] == "ACREDITADO"])
             cant_r10_r21_4m = len(df_4m[mask_r10_r21_4m])
@@ -401,8 +369,9 @@ if uploaded_file:
             firmantes_4m_disp["Total_Firmante"] = firmantes_4m_disp["Total_Firmante"].apply(fmt_monto)
             firmantes_4m_disp["% Concentración"] = firmantes_4m_disp["% Concentración"].apply(lambda x: f"{x:.2f}%")
 
-            st.subheader("👤 Totales por Firmante (sobre total operado) - Últimos 4 Meses")
-            mostrar_tabla_ampliada(firmantes_4m_disp)
+            # MUESTRA EL TOP 10 DE FIRMANTES 4 MESES
+            st.subheader("👤 Top 10 Firmantes (sobre total operado) - Últimos 4 Meses")
+            mostrar_tabla_estilizada(firmantes_4m_disp.head(10))
 
             # Tabla de firmantes SOLO R10/R21 - 4M (Agregado Motivo)
             firmantes_r10_r21_4m = (
@@ -421,10 +390,10 @@ if uploaded_file:
                 firmantes_r10_r21_4m["Monto"] = firmantes_r10_r21_4m["Monto"].apply(fmt_monto)
                 firmantes_r10_r21_4m["% Concentración"] = firmantes_r10_r21_4m["% Concentración"].apply(lambda x: f"{x:.2f}%")
                 
-                # Ordenar columnas
                 firmantes_r10_r21_4m = firmantes_r10_r21_4m[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
 
-                st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21) - Últimos 4 Meses")
-                mostrar_tabla_ampliada(firmantes_r10_r21_4m)
+                # MUESTRA EL TOP 10 DE RECHAZOS 4 MESES
+                st.subheader("👤 Top 10 Firmantes (SOLO Rechazados R10 y R21) - Últimos 4 Meses")
+                mostrar_tabla_estilizada(firmantes_r10_r21_4m.head(10))
             else:
                 st.success("No hay rechazos R10 ni R21 en los últimos 4 meses.")
