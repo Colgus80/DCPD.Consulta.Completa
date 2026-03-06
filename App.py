@@ -87,26 +87,72 @@ def fmt_monto(x):
         return "$ 0"
 
 # -----------------------------
-# Función para mostrar tabla estilizada en Streamlit (Texto más grande y sin índice)
+# Mostrar tabla Top 10 (Fuente grande + Índice del 1 al 10)
 # -----------------------------
 def mostrar_tabla_estilizada(df_to_show):
-    # Intentar ocultar el índice dependiendo de la versión de Pandas
-    try:
-        styled = df_to_show.style.hide(axis="index")
-    except:
-        try:
-            styled = df_to_show.style.hide_index()
-        except:
-            styled = df_to_show.style
+    df_to_show = df_to_show.copy()
+    
+    # Asignar explícitamente el índice del 1 en adelante
+    df_to_show.index = range(1, len(df_to_show) + 1)
             
     # Agrandar la fuente usando propiedades nativas
-    styled = styled.set_properties(**{
+    styled = df_to_show.style.set_properties(**{
         'font-size': '15px'
     }).set_table_styles([
         {'selector': 'th', 'props': [('font-size', '15px')]}
     ])
     
     st.dataframe(styled, use_container_width=True)
+
+# -----------------------------
+# Filtro y preparador para Datos Crudos
+# -----------------------------
+def preparar_datos_crudos(df_in):
+    # Diccionario para unificar variaciones de nombres de columnas
+    mapeo_columnas = {
+        "Den.Socio": "Den. Socio",
+        "Den. Socio": "Den. Socio",
+        "Tipo op.": "Tipo Op.",
+        "Tipo Op.": "Tipo Op.",
+        "CUI": "CUIT",
+        "CUIT": "CUIT",
+        "Den.Firmante": "Den. Firmante",
+        "Den. Firmante": "Den. Firmante",
+        "Monto": "Monto",
+        "Fecha Acreditación": "Fecha Acreditación",
+        "Estado": "Estado",
+        "Motivo Rechazo": "Motivo Rechazo"
+    }
+    
+    cols_encontradas = []
+    renombres = {}
+    
+    # Seleccionamos y renombramos solo si existen en el DataFrame
+    for col_original in df_in.columns:
+        if col_original in mapeo_columnas:
+            cols_encontradas.append(col_original)
+            if col_original != mapeo_columnas[col_original]:
+                renombres[col_original] = mapeo_columnas[col_original]
+                
+    df_out = df_in[cols_encontradas].copy()
+    df_out.rename(columns=renombres, inplace=True)
+    
+    # Formato a la fecha y al monto para visualización
+    if "Fecha Acreditación" in df_out.columns:
+        df_out["Fecha Acreditación"] = pd.to_datetime(df_out["Fecha Acreditación"], errors='coerce').dt.strftime('%d/%m/%Y')
+    if "Monto" in df_out.columns:
+        df_out["Monto"] = df_out["Monto"].apply(fmt_monto)
+        
+    # Orden específico solicitado
+    orden_ideal = ["Den. Socio", "Tipo Op.", "CUIT", "Den. Firmante", "Monto", "Fecha Acreditación", "Estado", "Motivo Rechazo"]
+    orden_final = [col for col in orden_ideal if col in df_out.columns]
+    
+    df_final = df_out[orden_final]
+    
+    # Índice del 1 en adelante también para los crudos
+    df_final.index = range(1, len(df_final) + 1)
+    return df_final
+
 
 # -----------------------------
 # Main
@@ -276,10 +322,10 @@ if uploaded_file:
     )
 
     # -----------------------------
-    # Datos crudos filtrados
+    # Datos crudos filtrados (GLOBAL)
     # -----------------------------
     with st.expander("🗂️ Ver datos crudos filtrados (Tipo Op. = CO, ACR + R10/R21)"):
-        st.dataframe(df_firmantes, use_container_width=True)
+        st.dataframe(preparar_datos_crudos(df_firmantes), use_container_width=True)
 
     # =========================================================================
     # SECCIÓN: ANÁLISIS DE LOS ÚLTIMOS 4 MESES 
@@ -397,3 +443,9 @@ if uploaded_file:
                 mostrar_tabla_estilizada(firmantes_r10_r21_4m.head(10))
             else:
                 st.success("No hay rechazos R10 ni R21 en los últimos 4 meses.")
+
+            # -----------------------------
+            # Datos crudos filtrados (ÚLTIMOS 4 MESES)
+            # -----------------------------
+            with st.expander("🗂️ Ver datos crudos filtrados (Tipo Op. = CO, ACR + R10/R21) - Últimos 4 Meses"):
+                st.dataframe(preparar_datos_crudos(df_firmantes_4m), use_container_width=True)
