@@ -289,13 +289,6 @@ if uploaded_file:
     st.subheader("👤 Top 10 Firmantes (sobre total operado)")
     mostrar_tabla_estilizada(firmantes)
 
-    st.download_button(
-        "⬇️ Descargar reporte firmantes (ACR + R10/R21) CSV Completo",
-        firmantes.to_csv(index=False).encode("utf-8"),
-        "reporte_firmantes_total.csv",
-        "text/csv"
-    )
-
     # -----------------------------
     # Tabla de firmantes SOLO R10/R21 (Agregado Motivo)
     # -----------------------------
@@ -319,24 +312,25 @@ if uploaded_file:
     st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21)")
     mostrar_tabla_estilizada(firmantes_r10_r21)
 
-    st.download_button(
-        "⬇️ Descargar reporte firmantes SOLO R10/R21 CSV Completo",
-        firmantes_r10_r21.to_csv(index=False).encode("utf-8"),
-        "reporte_firmantes_r10_r21.csv",
-        "text/csv"
-    )
-
     # -----------------------------
-    # Datos crudos filtrados (GLOBAL)
+    # VISOR DE CHEQUES POR FIRMANTE (GLOBAL)
     # -----------------------------
-    with st.expander("🗂️ Ver datos crudos filtrados (Tipo Op. = CO, ACR + R10/R21)"):
-        df_crudos_glob = preparar_datos_crudos(df_firmantes)
-        styled_crudos_glob = df_crudos_glob.style.set_properties(**{
-            'font-size': '16px'
-        }).set_table_styles([{'selector': 'th', 'props': [('font-size', '16px')]}])
+    st.markdown("---")
+    st.subheader("🔍 Visor Rápido de Cheques por Firmante")
+    st.markdown("Seleccioná un firmante para ver el detalle exacto de sus cheques acreditados y rechazados.")
+    
+    lista_firmantes_global = sorted(df_firmantes["Den. Firmante"].unique().tolist())
+    firmante_seleccionado_global = st.selectbox("Elegí un Firmante:", ["-- Seleccionar Firmante --"] + lista_firmantes_global, key="visor_global")
+    
+    if firmante_seleccionado_global != "-- Seleccionar Firmante --":
+        # Filtramos los datos crudos solo para ese firmante
+        df_firmante_especifico = df_firmantes[df_firmantes["Den. Firmante"] == firmante_seleccionado_global]
+        df_crudos_firmante = preparar_datos_crudos(df_firmante_especifico)
         
+        # Le aplicamos el mismo estilo grande
+        styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '16px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '16px')]}])
         st.dataframe(
-            styled_crudos_glob,
+            styled_crudos,
             use_container_width=False,
             column_config={
                 "Den. Firmante": st.column_config.TextColumn("Den. Firmante", width="large"),
@@ -460,14 +454,19 @@ if uploaded_file:
                 st.success("No hay rechazos R10 ni R21 en los últimos 4 meses.")
 
             # -----------------------------
-            # Datos crudos filtrados (ÚLTIMOS 4 MESES)
+            # VISOR DE CHEQUES POR FIRMANTE (ÚLTIMOS 4 MESES)
             # -----------------------------
-            with st.expander("🗂️ Ver datos crudos filtrados (Tipo Op. = CO, ACR + R10/R21) - Últimos 4 Meses"):
-                df_crudos_4m = preparar_datos_crudos(df_firmantes_4m)
-                styled_crudos_4m = df_crudos_4m.style.set_properties(**{
-                    'font-size': '16px'
-                }).set_table_styles([{'selector': 'th', 'props': [('font-size', '16px')]}])
+            st.markdown("---")
+            st.subheader("🔍 Visor Rápido de Cheques por Firmante (Últimos 4 Meses)")
+            
+            lista_firmantes_4m = sorted(df_firmantes_4m["Den. Firmante"].unique().tolist())
+            firmante_seleccionado_4m = st.selectbox("Elegí un Firmante (4 Meses):", ["-- Seleccionar Firmante --"] + lista_firmantes_4m, key="visor_4m")
+            
+            if firmante_seleccionado_4m != "-- Seleccionar Firmante --":
+                df_firmante_especifico_4m = df_firmantes_4m[df_firmantes_4m["Den. Firmante"] == firmante_seleccionado_4m]
+                df_crudos_firmante_4m = preparar_datos_crudos(df_firmante_especifico_4m)
                 
+                styled_crudos_4m = df_crudos_firmante_4m.style.set_properties(**{'font-size': '16px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '16px')]}])
                 st.dataframe(
                     styled_crudos_4m,
                     use_container_width=False,
