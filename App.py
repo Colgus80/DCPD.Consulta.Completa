@@ -87,9 +87,9 @@ def fmt_monto(x):
         return "$ 0"
 
 # -----------------------------
-# Mostrar tabla Top 10 (Fuente grande + Índice del 1 al 10)
+# Mostrar tabla (Fuente grande + Índice 1 en adelante + Scroll altura fija)
 # -----------------------------
-def mostrar_tabla_estilizada(df_to_show):
+def mostrar_tabla_estilizada(df_to_show, height=400):
     df_to_show = df_to_show.copy()
     
     # Asignar explícitamente el índice del 1 en adelante
@@ -102,13 +102,13 @@ def mostrar_tabla_estilizada(df_to_show):
         {'selector': 'th', 'props': [('font-size', '15px')]}
     ])
     
-    st.dataframe(styled, use_container_width=True)
+    # Pasamos el height para limitar lo que se ve y forzar el scroll
+    st.dataframe(styled, use_container_width=True, height=height)
 
 # -----------------------------
 # Filtro y preparador para Datos Crudos
 # -----------------------------
 def preparar_datos_crudos(df_in):
-    # Diccionario para unificar variaciones de nombres de columnas
     mapeo_columnas = {
         "Den.Socio": "Den. Socio",
         "Den. Socio": "Den. Socio",
@@ -127,7 +127,6 @@ def preparar_datos_crudos(df_in):
     cols_encontradas = []
     renombres = {}
     
-    # Seleccionamos y renombramos solo si existen en el DataFrame
     for col_original in df_in.columns:
         if col_original in mapeo_columnas:
             cols_encontradas.append(col_original)
@@ -137,20 +136,17 @@ def preparar_datos_crudos(df_in):
     df_out = df_in[cols_encontradas].copy()
     df_out.rename(columns=renombres, inplace=True)
     
-    # Formato a la fecha y al monto para visualización
     if "Fecha Acreditación" in df_out.columns:
         df_out["Fecha Acreditación"] = pd.to_datetime(df_out["Fecha Acreditación"], errors='coerce').dt.strftime('%d/%m/%Y')
     if "Monto" in df_out.columns:
         df_out["Monto"] = df_out["Monto"].apply(fmt_monto)
         
-    # Orden específico solicitado
     orden_ideal = ["Den. Socio", "Tipo Op.", "CUIT", "Den. Firmante", "Monto", "Fecha Acreditación", "Estado", "Motivo Rechazo"]
     orden_final = [col for col in orden_ideal if col in df_out.columns]
     
     df_final = df_out[orden_final]
-    
-    # Índice del 1 en adelante también para los crudos
     df_final.index = range(1, len(df_final) + 1)
+    
     return df_final
 
 
@@ -279,9 +275,9 @@ if uploaded_file:
     firmantes["Total_Firmante"] = firmantes["Total_Firmante"].apply(fmt_monto)
     firmantes["% Concentración"] = firmantes["% Concentración"].apply(lambda x: f"{x:.2f}%")
 
-    # MUESTRA EL TOP 10 DE FIRMANTES GLOBALES
+    # MUESTRA TODOS LOS FIRMANTES GLOBALES CON SCROLL (TÍTULO SOLICITADO MANTENIDO)
     st.subheader("👤 Top 10 Firmantes (sobre total operado)")
-    mostrar_tabla_estilizada(firmantes.head(10))
+    mostrar_tabla_estilizada(firmantes, height=400)
 
     st.download_button(
         "⬇️ Descargar reporte firmantes (ACR + R10/R21) CSV Completo",
@@ -310,9 +306,9 @@ if uploaded_file:
     
     firmantes_r10_r21 = firmantes_r10_r21[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
 
-    # MUESTRA EL TOP 10 DE RECHAZOS GLOBALES
-    st.subheader("👤 Top 10 Firmantes (SOLO Rechazados R10 y R21)")
-    mostrar_tabla_estilizada(firmantes_r10_r21.head(10))
+    # MUESTRA TODOS LOS RECHAZOS GLOBALES CON SCROLL
+    st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21)")
+    mostrar_tabla_estilizada(firmantes_r10_r21, height=400)
 
     st.download_button(
         "⬇️ Descargar reporte firmantes SOLO R10/R21 CSV Completo",
@@ -415,9 +411,9 @@ if uploaded_file:
             firmantes_4m_disp["Total_Firmante"] = firmantes_4m_disp["Total_Firmante"].apply(fmt_monto)
             firmantes_4m_disp["% Concentración"] = firmantes_4m_disp["% Concentración"].apply(lambda x: f"{x:.2f}%")
 
-            # MUESTRA EL TOP 10 DE FIRMANTES 4 MESES
+            # MUESTRA TODOS LOS FIRMANTES 4 MESES CON SCROLL (TÍTULO SOLICITADO MANTENIDO)
             st.subheader("👤 Top 10 Firmantes (sobre total operado) - Últimos 4 Meses")
-            mostrar_tabla_estilizada(firmantes_4m_disp.head(10))
+            mostrar_tabla_estilizada(firmantes_4m_disp, height=400)
 
             # Tabla de firmantes SOLO R10/R21 - 4M (Agregado Motivo)
             firmantes_r10_r21_4m = (
@@ -438,9 +434,9 @@ if uploaded_file:
                 
                 firmantes_r10_r21_4m = firmantes_r10_r21_4m[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
 
-                # MUESTRA EL TOP 10 DE RECHAZOS 4 MESES
-                st.subheader("👤 Top 10 Firmantes (SOLO Rechazados R10 y R21) - Últimos 4 Meses")
-                mostrar_tabla_estilizada(firmantes_r10_r21_4m.head(10))
+                # MUESTRA TODOS LOS RECHAZOS 4 MESES CON SCROLL
+                st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21) - Últimos 4 Meses")
+                mostrar_tabla_estilizada(firmantes_r10_r21_4m, height=400)
             else:
                 st.success("No hay rechazos R10 ni R21 en los últimos 4 meses.")
 
