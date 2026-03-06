@@ -87,6 +87,42 @@ def fmt_monto(x):
         return "$ 0"
 
 # -----------------------------
+# Función para tablas HTML personalizadas (Ideal para Capturas de Pantalla)
+# -----------------------------
+def mostrar_tabla_ampliada(df):
+    html = df.to_html(index=False, escape=False)
+    # Reemplazamos las clases por defecto de pandas por unas propias para aplicar CSS
+    html = html.replace('<table border="1" class="dataframe">', '<table class="report-table">')
+    
+    css = """
+    <style>
+    .report-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: sans-serif;
+        font-size: 16px; /* Letra más grande */
+        background-color: #ffffff;
+        color: #000000;
+        margin-bottom: 20px;
+    }
+    .report-table th {
+        background-color: #f0f2f6;
+        color: #31333F;
+        font-weight: bold;
+        text-align: left;
+        padding: 12px;
+        border: 1px solid #dcdcdc;
+    }
+    .report-table td {
+        padding: 10px 12px;
+        border: 1px solid #dcdcdc;
+        text-align: left;
+    }
+    </style>
+    """
+    st.markdown(css + html, unsafe_allow_html=True)
+
+# -----------------------------
 # Main
 # -----------------------------
 if uploaded_file:
@@ -224,7 +260,7 @@ if uploaded_file:
     firmantes["% Concentración"] = firmantes["% Concentración"].apply(lambda x: f"{x:.2f}%")
 
     st.subheader("👤 Totales por Firmante (sobre total operado)")
-    st.dataframe(firmantes, use_container_width=True)
+    mostrar_tabla_ampliada(firmantes)
 
     st.download_button(
         "⬇️ Descargar reporte firmantes (ACR + R10/R21) CSV",
@@ -255,7 +291,7 @@ if uploaded_file:
     firmantes_r10_r21 = firmantes_r10_r21[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
 
     st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21)")
-    st.dataframe(firmantes_r10_r21, use_container_width=True)
+    mostrar_tabla_ampliada(firmantes_r10_r21)
 
     st.download_button(
         "⬇️ Descargar reporte firmantes SOLO R10/R21 CSV",
@@ -265,7 +301,7 @@ if uploaded_file:
     )
 
     # -----------------------------
-    # Datos crudos filtrados
+    # Datos crudos filtrados (Este lo mantenemos normal ya que es solo para inspeccionar)
     # -----------------------------
     with st.expander("🗂️ Ver datos crudos filtrados (Tipo Op. = CO, ACR + R10/R21)"):
         st.dataframe(df_firmantes, use_container_width=True)
@@ -366,7 +402,7 @@ if uploaded_file:
             firmantes_4m_disp["% Concentración"] = firmantes_4m_disp["% Concentración"].apply(lambda x: f"{x:.2f}%")
 
             st.subheader("👤 Totales por Firmante (sobre total operado) - Últimos 4 Meses")
-            st.dataframe(firmantes_4m_disp, use_container_width=True)
+            mostrar_tabla_ampliada(firmantes_4m_disp)
 
             # Tabla de firmantes SOLO R10/R21 - 4M (Agregado Motivo)
             firmantes_r10_r21_4m = (
@@ -389,6 +425,6 @@ if uploaded_file:
                 firmantes_r10_r21_4m = firmantes_r10_r21_4m[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
 
                 st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21) - Últimos 4 Meses")
-                st.dataframe(firmantes_r10_r21_4m, use_container_width=True)
+                mostrar_tabla_ampliada(firmantes_r10_r21_4m)
             else:
                 st.success("No hay rechazos R10 ni R21 en los últimos 4 meses.")
