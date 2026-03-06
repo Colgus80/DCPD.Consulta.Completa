@@ -87,7 +87,7 @@ def fmt_monto(x):
         return "$ 0"
 
 # -----------------------------
-# Mostrar tabla (Fuente ampliada + Ancho al texto + Índice 1 en adelante + Altura dinámica)
+# Mostrar tabla (Fuente ampliada + Ancho forzado "large" + Índice 1 en adelante + Altura dinámica)
 # -----------------------------
 def mostrar_tabla_estilizada(df_to_show):
     df_to_show = df_to_show.copy()
@@ -95,19 +95,26 @@ def mostrar_tabla_estilizada(df_to_show):
     # Asignar explícitamente el índice del 1 en adelante
     df_to_show.index = range(1, len(df_to_show) + 1)
             
-    # Agrandar la fuente y forzar que no se corte el texto (nowrap)
+    # Agrandar la fuente 
     styled = df_to_show.style.set_properties(**{
-        'font-size': '16px',
-        'white-space': 'nowrap'
+        'font-size': '16px'
     }).set_table_styles([
-        {'selector': 'th', 'props': [('font-size', '16px'), ('white-space', 'nowrap')]}
+        {'selector': 'th', 'props': [('font-size', '16px')]}
     ])
     
-    # Calcular altura dinámica: ~45px encabezado + ~36px por fila. Tope máximo de 400px (aprox 10 filas)
+    # Calcular altura dinámica: ~45px encabezado + ~36px por fila. Tope máximo de 400px
     altura_dinamica = min(400, 45 + (len(df_to_show) * 36))
     
-    # Al no usar use_container_width=True, Streamlit ajusta las columnas al contenido
-    st.dataframe(styled, height=altura_dinamica)
+    # Usamos column_config para obligar a las columnas largas a nacer expandidas
+    st.dataframe(
+        styled, 
+        height=altura_dinamica,
+        use_container_width=False,
+        column_config={
+            "Den. Firmante": st.column_config.TextColumn("Den. Firmante", width="large"),
+            "Motivo del rechazo": st.column_config.TextColumn("Motivo del rechazo", width="large")
+        }
+    )
 
 # -----------------------------
 # Filtro y preparador para Datos Crudos
@@ -279,7 +286,6 @@ if uploaded_file:
     firmantes["Total_Firmante"] = firmantes["Total_Firmante"].apply(fmt_monto)
     firmantes["% Concentración"] = firmantes["% Concentración"].apply(lambda x: f"{x:.2f}%")
 
-    # MUESTRA TODOS LOS FIRMANTES GLOBALES (ALTURA DINÁMICA HASTA ~10 FILAS)
     st.subheader("👤 Top 10 Firmantes (sobre total operado)")
     mostrar_tabla_estilizada(firmantes)
 
@@ -310,7 +316,6 @@ if uploaded_file:
     
     firmantes_r10_r21 = firmantes_r10_r21[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
 
-    # MUESTRA TODOS LOS RECHAZOS GLOBALES (ALTURA DINÁMICA HASTA ~10 FILAS)
     st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21)")
     mostrar_tabla_estilizada(firmantes_r10_r21)
 
@@ -327,9 +332,17 @@ if uploaded_file:
     with st.expander("🗂️ Ver datos crudos filtrados (Tipo Op. = CO, ACR + R10/R21)"):
         df_crudos_glob = preparar_datos_crudos(df_firmantes)
         styled_crudos_glob = df_crudos_glob.style.set_properties(**{
-            'font-size': '15px', 'white-space': 'nowrap'
-        }).set_table_styles([{'selector': 'th', 'props': [('font-size', '15px'), ('white-space', 'nowrap')]}])
-        st.dataframe(styled_crudos_glob)
+            'font-size': '16px'
+        }).set_table_styles([{'selector': 'th', 'props': [('font-size', '16px')]}])
+        
+        st.dataframe(
+            styled_crudos_glob,
+            use_container_width=False,
+            column_config={
+                "Den. Firmante": st.column_config.TextColumn("Den. Firmante", width="large"),
+                "Motivo Rechazo": st.column_config.TextColumn("Motivo Rechazo", width="large")
+            }
+        )
 
     # =========================================================================
     # SECCIÓN: ANÁLISIS DE LOS ÚLTIMOS 4 MESES 
@@ -419,7 +432,6 @@ if uploaded_file:
             firmantes_4m_disp["Total_Firmante"] = firmantes_4m_disp["Total_Firmante"].apply(fmt_monto)
             firmantes_4m_disp["% Concentración"] = firmantes_4m_disp["% Concentración"].apply(lambda x: f"{x:.2f}%")
 
-            # MUESTRA TODOS LOS FIRMANTES 4 MESES (ALTURA DINÁMICA HASTA ~10 FILAS)
             st.subheader("👤 Top 10 Firmantes (sobre total operado) - Últimos 4 Meses")
             mostrar_tabla_estilizada(firmantes_4m_disp)
 
@@ -442,7 +454,6 @@ if uploaded_file:
                 
                 firmantes_r10_r21_4m = firmantes_r10_r21_4m[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
 
-                # MUESTRA TODOS LOS RECHAZOS 4 MESES (ALTURA DINÁMICA HASTA ~10 FILAS)
                 st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21) - Últimos 4 Meses")
                 mostrar_tabla_estilizada(firmantes_r10_r21_4m)
             else:
@@ -454,6 +465,14 @@ if uploaded_file:
             with st.expander("🗂️ Ver datos crudos filtrados (Tipo Op. = CO, ACR + R10/R21) - Últimos 4 Meses"):
                 df_crudos_4m = preparar_datos_crudos(df_firmantes_4m)
                 styled_crudos_4m = df_crudos_4m.style.set_properties(**{
-                    'font-size': '15px', 'white-space': 'nowrap'
-                }).set_table_styles([{'selector': 'th', 'props': [('font-size', '15px'), ('white-space', 'nowrap')]}])
-                st.dataframe(styled_crudos_4m)
+                    'font-size': '16px'
+                }).set_table_styles([{'selector': 'th', 'props': [('font-size', '16px')]}])
+                
+                st.dataframe(
+                    styled_crudos_4m,
+                    use_container_width=False,
+                    column_config={
+                        "Den. Firmante": st.column_config.TextColumn("Den. Firmante", width="large"),
+                        "Motivo Rechazo": st.column_config.TextColumn("Motivo Rechazo", width="large")
+                    }
+                )
