@@ -122,7 +122,7 @@ if uploaded_file:
     total_acreditado = df.loc[df["Estado"] == "ACREDITADO", "Monto"].sum()
     mask_rechazo = df["Estado"] == "RECHAZADO"
     
-    # NUEVO: Buscar tanto R10 como R21
+    # Buscar tanto R10 como R21
     mask_r10_r21 = mask_rechazo & df["Motivo Rechazo"].str.contains(r"R10|R21", na=False, regex=True)
     rechazados_r10_r21 = df.loc[mask_r10_r21, "Monto"].sum()
 
@@ -234,17 +234,25 @@ if uploaded_file:
     )
 
     # -----------------------------
-    # Tabla de firmantes SOLO R10/R21
+    # Tabla de firmantes SOLO R10/R21 (Agregado Motivo)
     # -----------------------------
     firmantes_r10_r21 = (
-        df[mask_r10_r21].groupby("Den. Firmante")["Monto"]
-        .sum()
+        df[mask_r10_r21].groupby("Den. Firmante")
+        .agg(
+            Monto=("Monto", "sum"),
+            Motivo_Rechazo=("Motivo Rechazo", lambda x: " | ".join(sorted(set(x.dropna().astype(str).str.strip()))))
+        )
         .reset_index()
+        .rename(columns={"Motivo_Rechazo": "Motivo del rechazo"})
         .sort_values("Monto", ascending=False)
     )
+
     firmantes_r10_r21["% Concentración"] = firmantes_r10_r21["Monto"] / rechazados_r10_r21 * 100 if rechazados_r10_r21 > 0 else 0
     firmantes_r10_r21["Monto"] = firmantes_r10_r21["Monto"].apply(fmt_monto)
     firmantes_r10_r21["% Concentración"] = firmantes_r10_r21["% Concentración"].apply(lambda x: f"{x:.2f}%")
+    
+    # Ordenar las columnas para visualizar mejor
+    firmantes_r10_r21 = firmantes_r10_r21[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
 
     st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21)")
     st.dataframe(firmantes_r10_r21, use_container_width=True)
@@ -295,7 +303,7 @@ if uploaded_file:
                 """, unsafe_allow_html=True
             )
             
-            # Calcular concentración de rechazos por mes para el texto
+            # Calcular concentración de rechazos por mes para el texto (CON REDONDEO AL 100%)
             df_4m_fechas = df_4m.copy()
             df_4m_fechas["Fecha Acreditación"] = pd.to_datetime(df_4m_fechas["Fecha Acreditación"], errors="coerce")
             df_4m_fechas["Mes_Anio"] = df_4m_fechas["Fecha Acreditación"].dt.strftime('%m-%Y')
@@ -303,7 +311,14 @@ if uploaded_file:
             
             if not rechazos_por_mes.empty and rechazados_r10_r21_4m > 0:
                 meses_pct = (rechazos_por_mes / rechazados_r10_r21_4m * 100).sort_values(ascending=False)
-                str_meses = ", ".join([f"{mes} ({pct:.1f}%)" for mes, pct in meses_pct.items()])
+                meses_pct_int = meses_pct.round().astype(int)
+                
+                # Ajuste matemático para garantizar que la suma dé 100% exacto
+                diferencia = 100 - meses_pct_int.sum()
+                if diferencia != 0 and len(meses_pct_int) > 0:
+                    meses_pct_int.iloc[0] += diferencia
+
+                str_meses = ", ".join([f"{mes} ({pct}%)" for mes, pct in meses_pct_int.items()])
             else:
                 str_meses = "Ninguno (0%)"
 
@@ -353,12 +368,25 @@ if uploaded_file:
             st.subheader("👤 Totales por Firmante (sobre total operado) - Últimos 4 Meses")
             st.dataframe(firmantes_4m_disp, use_container_width=True)
 
-            # Tabla de firmantes SOLO R10/R21 - 4M
-            firmantes_r10_r21_4m = df_4m[mask_r10_r21_4m].groupby("Den. Firmante")["Monto"].sum().reset_index().sort_values("Monto", ascending=False)
+            # Tabla de firmantes SOLO R10/R21 - 4M (Agregado Motivo)
+            firmantes_r10_r21_4m = (
+                df_4m[mask_r10_r21_4m].groupby("Den. Firmante")
+                .agg(
+                    Monto=("Monto", "sum"),
+                    Motivo_Rechazo=("Motivo Rechazo", lambda x: " | ".join(sorted(set(x.dropna().astype(str).str.strip()))))
+                )
+                .reset_index()
+                .rename(columns={"Motivo_Rechazo": "Motivo del rechazo"})
+                .sort_values("Monto", ascending=False)
+            )
+
             if not firmantes_r10_r21_4m.empty:
                 firmantes_r10_r21_4m["% Concentración"] = firmantes_r10_r21_4m["Monto"] / rechazados_r10_r21_4m * 100 if rechazados_r10_r21_4m > 0 else 0
                 firmantes_r10_r21_4m["Monto"] = firmantes_r10_r21_4m["Monto"].apply(fmt_monto)
                 firmantes_r10_r21_4m["% Concentración"] = firmantes_r10_r21_4m["% Concentración"].apply(lambda x: f"{x:.2f}%")
+                
+                # Ordenar columnas
+                firmantes_r10_r21_4m = firmantes_r10_r21_4m[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
 
                 st.subheader("👤 Totales por Firmante (SOLO Rechazados R10 y R21) - Últimos 4 Meses")
                 st.dataframe(firmantes_r10_r21_4m, use_container_width=True)
