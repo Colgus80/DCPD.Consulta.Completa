@@ -1,1 +1,364 @@
+import streamlit as st
+import pandas as pd
+import re
+import os
 
+st.set_page_config(page_title="Reporte de DCPD", layout="wide")
+st.title("📊 Reporte de DCPD (valores Acreditados y Rechazados)")
+
+uploaded_file = st.file_uploader("📂 Subí tu archivo Excel ValoresAcreditados", type=["xls", "xlsx", "xlsb", "csv"])
+
+# -----------------------------
+# Lectura robusta del archivo 
+# -----------------------------
+def leer_archivo_robusto(file):
+    ext = os.path.splitext(file.name)[1].lower().lstrip(".")
+    file.seek(0)
+    try:
+        if ext == "xlsx":
+            return pd.read_excel(file, engine="openpyxl")
+        elif ext == "xls":
+            try:
+                return pd.read_excel(file, engine="xlrd")
+            except Exception:
+                try:
+                    return pd.read_excel(file, engine="pyxlsb")
+                except Exception:
+                    file.seek(0)
+                    try:
+                        return pd.read_csv(file, sep="\t", encoding="latin1", quotechar='"', engine="python")
+                    except Exception:
+                        file.seek(0)
+                        try:
+                            return pd.read_csv(file, sep=";", encoding="latin1", quotechar='"', engine="python")
+                        except Exception:
+                            file.seek(0)
+                            return pd.read_csv(file, sep=",", encoding="latin1", quotechar='"', engine="python")
+        elif ext == "xlsb":
+            return pd.read_excel(file, engine="pyxlsb")
+        elif ext == "csv":
+            file.seek(0)
+            try:
+                return pd.read_csv(file, sep=";", encoding="latin1", quotechar='"', engine="python")
+            except Exception:
+                file.seek(0)
+                return pd.read_csv(file, sep=",", encoding="latin1", quotechar='"', engine="python")
+        else:
+            raise ValueError("Formato no soportado")
+    except Exception as e:
+        raise ValueError(f"No se pudo leer el archivo: {e}")
+
+# -----------------------------
+# Función para parsear montos
+# -----------------------------
+def parse_amount_from_text(text):
+    if pd.isna(text):
+        return 0.0
+    s = str(text).upper().strip()
+    m = re.search(r"[-+]?[0-9\.,]+", s)
+    if not m:
+        return 0.0
+    token = m.group(0).replace('"', '').strip()
+    if token.count(".") > 0 and token.count(",") > 0:
+        if token.rfind(",") > token.rfind("."):
+            token = token.replace(".", "").replace(",", ".")
+        else:
+            token = token.replace(",", "")
+    elif token.count(",") > 0 and token.count(".") == 0:
+        part_after = token.split(",")[-1]
+        if 1 <= len(part_after) <= 2:
+            token = token.replace(".", "").replace(",", ".")
+        else:
+            token = token.replace(",", "")
+    else:
+        token = token.replace(",", "")
+    try:
+        return float(token)
+    except:
+        return 0.0
+
+# -----------------------------
+# Formateo visual de montos
+# -----------------------------
+def fmt_monto(x):
+    try:
+        return f"$ {x:,.0f}".replace(",", ".")
+    except:
+        return "$ 0"
+
+# -----------------------------
+# Main
+# -----------------------------
+if uploaded_file:
+    try:
+        df = leer_archivo_robusto(uploaded_file)
+    except Exception as e:
+        st.error(f"No se pudo leer el archivo: {e}")
+        st.stop()
+
+    df.columns = df.columns.astype(str).str.strip().str.replace('"', '')
+
+    required_cols = ["Tipo Op.", "Monto Acreditado / Rechazado", "Den. Firmante", "Fecha Acreditación"]
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        st.error(f"Faltan columnas necesarias: {missing}")
+        st.stop()
+
+    df["Tipo Op."] = df["Tipo Op."].astype(str).str.strip().str.replace('"', '')
+    df = df[df["Tipo Op."] == "CO"].copy()
+
+    if "Motivo Rechazo" not in df.columns:
+        df["Motivo Rechazo"] = ""
+    df["Motivo Rechazo"] = df["Motivo Rechazo"].astype(str)
+    df["Den. Firmante"] = df["Den. Firmante"].astype(str).str.strip().str.replace('"', '')
+
+    df["_monto_texto"] = df["Monto Acreditado / Rechazado"].astype(str)
+    df["Estado"] = df["_monto_texto"].str.upper().apply(
+        lambda x: "ACREDITADO" if "ACREDITADO" in x else ("RECHAZADO" if "RECHAZADO" in x else "OTRO")
+    )
+    df["Monto"] = df["_monto_texto"].apply(parse_amount_from_text)
+
+    # --- Totales ---
+    total_acreditado = df.loc[df["Estado"] == "ACREDITADO", "Monto"].sum()
+    mask_rechazo = df["Estado"] == "RECHAZADO"
+    mask_r10 = mask_rechazo & df["Motivo Rechazo"].str.contains("R10", na=False)
+    rechazados_r10 = df.loc[mask_r10, "Monto"].sum()
+
+    # Total operado = acreditado + rechazado R10
+    total_operado = total_acreditado + rechazados_r10
+
+    pct_acreditado = (total_acreditado / total_operado * 100) if total_operado > 0 else 0.0
+    pct_r10 = (rechazados_r10 / total_operado * 100) if total_operado > 0 else 0.0
+
+    # -----------------------------
+    # Socio + Lapso temporal
+    # -----------------------------
+    try:
+        fechas = pd.to_datetime(df["Fecha Acreditación"], errors="coerce")
+        socio = df["Den. Socio"].dropna().unique()[0] if "Den. Socio" in df.columns else ""
+        if fechas.notna().any():
+            st.markdown(
+                f"""
+                <div style="font-size:30px; font-weight:bold; color:green; margin-bottom:10px;">
+                👥 {socio}
+                </div>
+                <div style="font-size:20px; font-weight:bold; color:#444;">
+                📅 Detalle de cheques de pago diferido descontados (DCPD) con vencimiento operado entre 
+                <span>{fechas.min().strftime('%d/%m/%Y')}</span> y 
+                <span>{fechas.max().strftime('%d/%m/%Y')}</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+    except Exception as e:
+        st.warning(f"No se pudo procesar fechas o socio: {e}")
+
+    # -----------------------------
+    # Totales + Cantidad de cheques
+    # -----------------------------
+    cant_total_operado = len(df[(df["Estado"] == "ACREDITADO") | mask_r10])
+    cant_acreditados = len(df[df["Estado"] == "ACREDITADO"])
+    cant_r10 = len(df[mask_r10])
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("📦 Total Operado", fmt_monto(total_operado))
+        st.markdown(
+            f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_total_operado}</b></div>",
+            unsafe_allow_html=True
+        )
+
+    with col2:
+        st.metric("💰 Total Acreditado", fmt_monto(total_acreditado))
+        st.markdown(
+            f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_acreditados}</b></div>",
+            unsafe_allow_html=True
+        )
+
+    with col3:
+        st.metric("❌ Rechazados (Sin Fondos)", fmt_monto(rechazados_r10))
+        st.markdown(
+            f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_r10}</b></div>",
+            unsafe_allow_html=True
+        )
+
+    # -----------------------------
+    # % Acreditado y Rechazado
+    # -----------------------------
+    colA, colB = st.columns(2)
+    colA.markdown(f"<div style='font-size:26px; font-weight:bold; color:green;'>✅ % Acreditado: {pct_acreditado:.2f}%</div>", unsafe_allow_html=True)
+    colB.markdown(f"<div style='font-size:26px; font-weight:bold; color:green;'>❌ % Rechazados (Sin Fondos): {pct_r10:.2f}%</div>", unsafe_allow_html=True)
+
+    # -----------------------------
+    # Tabla de firmantes (Acreditados + R10)
+    # -----------------------------
+    df_firmantes = df[(df["Estado"] == "ACREDITADO") | (mask_r10)].copy()
+    df_firmantes["Tipo"] = df_firmantes.apply(
+        lambda row: "ACREDITADO" if row["Estado"] == "ACREDITADO" else "RECHAZADO R10",
+        axis=1
+    )
+
+    firmantes = (
+        df_firmantes.groupby(["Den. Firmante", "Tipo"])["Monto"]
+        .sum()
+        .unstack(fill_value=0)
+        .reset_index()
+    )
+
+    if "ACREDITADO" not in firmantes.columns:
+        firmantes["ACREDITADO"] = 0
+    if "RECHAZADO R10" not in firmantes.columns:
+        firmantes["RECHAZADO R10"] = 0
+
+    firmantes["Total_Firmante"] = firmantes["ACREDITADO"] + firmantes["RECHAZADO R10"]
+    firmantes["% Concentración"] = firmantes["Total_Firmante"] / total_operado * 100
+
+    firmantes = firmantes.sort_values("Total_Firmante", ascending=False).reset_index(drop=True)
+
+    firmantes["ACREDITADO"] = firmantes["ACREDITADO"].apply(fmt_monto)
+    firmantes["RECHAZADO R10"] = firmantes["RECHAZADO R10"].apply(fmt_monto)
+    firmantes["Total_Firmante"] = firmantes["Total_Firmante"].apply(fmt_monto)
+    firmantes["% Concentración"] = firmantes["% Concentración"].apply(lambda x: f"{x:.2f}%")
+
+    st.subheader("👤 Totales por Firmante (sobre total operado)")
+    st.dataframe(firmantes, use_container_width=True)
+
+    st.download_button(
+        "⬇️ Descargar reporte firmantes (ACR + R10) CSV",
+        firmantes.to_csv(index=False).encode("utf-8"),
+        "reporte_firmantes_total.csv",
+        "text/csv"
+    )
+
+    # -----------------------------
+    # Tabla de firmantes SOLO R10
+    # -----------------------------
+    firmantes_r10 = (
+        df[mask_r10].groupby("Den. Firmante")["Monto"]
+        .sum()
+        .reset_index()
+        .sort_values("Monto", ascending=False)
+    )
+    firmantes_r10["% Concentración"] = firmantes_r10["Monto"] / rechazados_r10 * 100 if rechazados_r10 > 0 else 0
+    firmantes_r10["Monto"] = firmantes_r10["Monto"].apply(fmt_monto)
+    firmantes_r10["% Concentración"] = firmantes_r10["% Concentración"].apply(lambda x: f"{x:.2f}%")
+
+    st.subheader("👤 Totales por Firmante (SOLO Rechazados Sin Fondos)")
+    st.dataframe(firmantes_r10, use_container_width=True)
+
+    st.download_button(
+        "⬇️ Descargar reporte firmantes SOLO R10 CSV",
+        firmantes_r10.to_csv(index=False).encode("utf-8"),
+        "reporte_firmantes_r10.csv",
+        "text/csv"
+    )
+
+    # -----------------------------
+    # Datos crudos filtrados
+    # -----------------------------
+    with st.expander("🗂️ Ver datos crudos filtrados (Tipo Op. = CO, ACR + R10)"):
+        st.dataframe(df_firmantes, use_container_width=True)
+
+    # =========================================================================
+    # NUEVA SECCIÓN: ANÁLISIS DE LOS ÚLTIMOS 4 MESES (AGREGADO)
+    # =========================================================================
+    if rechazados_r10 > 0:
+        st.markdown("---")
+        
+        # Parsear las fechas temporalmente para filtrar sin afectar el dataframe original
+        fechas_dt = pd.to_datetime(df["Fecha Acreditación"], errors="coerce")
+        fecha_actual = pd.Timestamp.today().normalize()
+        min_date_4m = fecha_actual - pd.DateOffset(months=4)
+        
+        # Filtrar datos de los últimos 4 meses
+        mask_fechas_4m = (fechas_dt >= min_date_4m) & (fechas_dt <= fecha_actual)
+        df_4m = df[mask_fechas_4m].copy()
+        
+        # Recalcular métricas para 4 meses
+        mask_r10_4m = (df_4m["Estado"] == "RECHAZADO") & df_4m["Motivo Rechazo"].str.contains("R10", na=False)
+        total_acreditado_4m = df_4m.loc[df_4m["Estado"] == "ACREDITADO", "Monto"].sum()
+        rechazados_r10_4m = df_4m.loc[mask_r10_4m, "Monto"].sum()
+        total_operado_4m = total_acreditado_4m + rechazados_r10_4m
+        
+        pct_acreditado_4m = (total_acreditado_4m / total_operado_4m * 100) if total_operado_4m > 0 else 0.0
+        pct_r10_4m = (rechazados_r10_4m / total_operado_4m * 100) if total_operado_4m > 0 else 0.0
+
+        if total_operado_4m > 0:
+            st.markdown(
+                f"""
+                <div style="font-size:24px; font-weight:bold; color:#d62728; margin-bottom:10px;">
+                🔎 Foco de Riesgo: Últimos 4 Meses (Desde {min_date_4m.strftime('%d/%m/%Y')} hasta Hoy)
+                </div>
+                """, unsafe_allow_html=True
+            )
+            
+            # Calcular concentración de rechazos por mes para el texto
+            df_4m_fechas = df_4m.copy()
+            df_4m_fechas["Fecha Acreditación"] = pd.to_datetime(df_4m_fechas["Fecha Acreditación"], errors="coerce")
+            df_4m_fechas["Mes_Anio"] = df_4m_fechas["Fecha Acreditación"].dt.strftime('%m-%Y')
+            rechazos_por_mes = df_4m_fechas[mask_r10_4m].groupby("Mes_Anio")["Monto"].sum()
+            
+            if not rechazos_por_mes.empty and rechazados_r10_4m > 0:
+                meses_pct = (rechazos_por_mes / rechazados_r10_4m * 100).sort_values(ascending=False)
+                str_meses = ", ".join([f"{mes} ({pct:.1f}%)" for mes, pct in meses_pct.items()])
+            else:
+                str_meses = "Ninguno (0%)"
+
+            # 1. TEXTO SOLICITADO
+            st.info(f"**Durante los últimos 4 meses la operatoria en DCPD totalizó {fmt_monto(total_operado_4m)}, con un margen de rechazos del {pct_r10_4m:.2f}%, concentrados en los meses de {str_meses}.**")
+
+            # 2. MISMA INFORMACIÓN QUE LA CONSULTA ORIGINAL (Para los últimos 4 meses)
+            cant_total_operado_4m = len(df_4m[(df_4m["Estado"] == "ACREDITADO") | mask_r10_4m])
+            cant_acreditados_4m = len(df_4m[df_4m["Estado"] == "ACREDITADO"])
+            cant_r10_4m = len(df_4m[mask_r10_4m])
+
+            col1_4m, col2_4m, col3_4m = st.columns(3)
+            with col1_4m:
+                st.metric("📦 Total Operado (4M)", fmt_monto(total_operado_4m))
+                st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_total_operado_4m}</b></div>", unsafe_allow_html=True)
+            with col2_4m:
+                st.metric("💰 Total Acreditado (4M)", fmt_monto(total_acreditado_4m))
+                st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_acreditados_4m}</b></div>", unsafe_allow_html=True)
+            with col3_4m:
+                st.metric("❌ Rechazados (Sin Fondos) (4M)", fmt_monto(rechazados_r10_4m))
+                st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_r10_4m}</b></div>", unsafe_allow_html=True)
+
+            colA_4m, colB_4m = st.columns(2)
+            colA_4m.markdown(f"<div style='font-size:26px; font-weight:bold; color:green;'>✅ % Acreditado: {pct_acreditado_4m:.2f}%</div>", unsafe_allow_html=True)
+            colB_4m.markdown(f"<div style='font-size:26px; font-weight:bold; color:green;'>❌ % Rechazados (Sin Fondos): {pct_r10_4m:.2f}%</div>", unsafe_allow_html=True)
+
+            # Tabla de firmantes (Acreditados + R10) - 4M
+            df_firmantes_4m = df_4m[(df_4m["Estado"] == "ACREDITADO") | mask_r10_4m].copy()
+            df_firmantes_4m["Tipo"] = df_firmantes_4m.apply(
+                lambda row: "ACREDITADO" if row["Estado"] == "ACREDITADO" else "RECHAZADO R10", axis=1
+            )
+
+            firmantes_4m = df_firmantes_4m.groupby(["Den. Firmante", "Tipo"])["Monto"].sum().unstack(fill_value=0).reset_index()
+            if "ACREDITADO" not in firmantes_4m.columns: firmantes_4m["ACREDITADO"] = 0
+            if "RECHAZADO R10" not in firmantes_4m.columns: firmantes_4m["RECHAZADO R10"] = 0
+
+            firmantes_4m["Total_Firmante"] = firmantes_4m["ACREDITADO"] + firmantes_4m["RECHAZADO R10"]
+            firmantes_4m["% Concentración"] = firmantes_4m["Total_Firmante"] / total_operado_4m * 100
+            firmantes_4m = firmantes_4m.sort_values("Total_Firmante", ascending=False).reset_index(drop=True)
+
+            firmantes_4m_disp = firmantes_4m.copy()
+            firmantes_4m_disp["ACREDITADO"] = firmantes_4m_disp["ACREDITADO"].apply(fmt_monto)
+            firmantes_4m_disp["RECHAZADO R10"] = firmantes_4m_disp["RECHAZADO R10"].apply(fmt_monto)
+            firmantes_4m_disp["Total_Firmante"] = firmantes_4m_disp["Total_Firmante"].apply(fmt_monto)
+            firmantes_4m_disp["% Concentración"] = firmantes_4m_disp["% Concentración"].apply(lambda x: f"{x:.2f}%")
+
+            st.subheader("👤 Totales por Firmante (sobre total operado) - Últimos 4 Meses")
+            st.dataframe(firmantes_4m_disp, use_container_width=True)
+
+            # Tabla de firmantes SOLO R10 - 4M
+            firmantes_r10_4m = df_4m[mask_r10_4m].groupby("Den. Firmante")["Monto"].sum().reset_index().sort_values("Monto", ascending=False)
+            if not firmantes_r10_4m.empty:
+                firmantes_r10_4m["% Concentración"] = firmantes_r10_4m["Monto"] / rechazados_r10_4m * 100 if rechazados_r10_4m > 0 else 0
+                firmantes_r10_4m["Monto"] = firmantes_r10_4m["Monto"].apply(fmt_monto)
+                firmantes_r10_4m["% Concentración"] = firmantes_r10_4m["% Concentración"].apply(lambda x: f"{x:.2f}%")
+
+                st.subheader("👤 Totales por Firmante (SOLO Rechazados Sin Fondos) - Últimos 4 Meses")
+                st.dataframe(firmantes_r10_4m, use_container_width=True)
+            else:
+                st.success("No hay rechazos R10 en los últimos 4 meses.")
