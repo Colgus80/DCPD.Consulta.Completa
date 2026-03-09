@@ -87,7 +87,7 @@ def fmt_monto(x):
         return "$ 0"
 
 # -----------------------------
-# Mostrar tabla (Fuente ampliada + Ancho forzado "large" + Índice 1 en adelante + Altura dinámica)
+# Mostrar tabla (Fuente ampliada + Ancho expandido)
 # -----------------------------
 def mostrar_tabla_estilizada(df_to_show):
     df_to_show = df_to_show.copy()
@@ -95,21 +95,22 @@ def mostrar_tabla_estilizada(df_to_show):
     # Asignar explícitamente el índice del 1 en adelante
     df_to_show.index = range(1, len(df_to_show) + 1)
             
-    # Agrandar la fuente 
+    # Agrandar la fuente a 18px para mejor lectura en alta resolución
     styled = df_to_show.style.set_properties(**{
-        'font-size': '16px'
+        'font-size': '18px',
+        'padding': '6px'
     }).set_table_styles([
-        {'selector': 'th', 'props': [('font-size', '16px')]}
+        {'selector': 'th', 'props': [('font-size', '18px')]}
     ])
     
-    # Calcular altura dinámica: ~45px encabezado + ~36px por fila. Tope máximo de 400px
-    altura_dinamica = min(400, 45 + (len(df_to_show) * 36))
+    # Calcular altura dinámica un poco más alta por la fuente más grande
+    altura_dinamica = min(500, 50 + (len(df_to_show) * 40))
     
-    # Usamos column_config para obligar a las columnas largas a nacer expandidas
+    # use_container_width=True fuerza a la tabla a expandirse hasta los márgenes
     st.dataframe(
         styled, 
         height=altura_dinamica,
-        use_container_width=False,
+        use_container_width=True, 
         column_config={
             "Den. Firmante": st.column_config.TextColumn("Den. Firmante", width="large"),
             "Motivo del rechazo": st.column_config.TextColumn("Motivo del rechazo", width="large")
@@ -254,8 +255,8 @@ if uploaded_file:
     # % Acreditado y Rechazado (SIN CÓDIGOS)
     # -----------------------------
     colA, colB = st.columns(2)
-    colA.markdown(f"<div style='font-size:26px; font-weight:bold; color:green;'>✅ % Acreditado: {pct_acreditado:.2f}%</div>", unsafe_allow_html=True)
-    colB.markdown(f"<div style='font-size:26px; font-weight:bold; color:green;'>❌ % Rechazados: {pct_prob_financieros:.2f}%</div>", unsafe_allow_html=True)
+    colA.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>✅ % Acreditado: {pct_acreditado:.2f}%</div>", unsafe_allow_html=True)
+    colB.markdown(f"<div style='font-size:26px; font-weight:bold; color:red; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros:.2f}%</div>", unsafe_allow_html=True)
 
     # -----------------------------
     # Tabla de firmantes (Acreditados + Problemas Financieros)
@@ -295,7 +296,7 @@ if uploaded_file:
         st.info(f"**Descontó {cant_total_operado} valores por un total de {fmt_monto(total_operado)} con un margen de rechazos del {pct_prob_financieros:.2f}%.**")
 
     # -----------------------------
-    # Tabla de firmantes SOLO PROBLEMAS FINANCIEROS (TÍTULO ACTUALIZADO)
+    # Tabla de firmantes SOLO PROBLEMAS FINANCIEROS
     # -----------------------------
     firmantes_prob_financieros = (
         df[mask_prob_financieros].groupby("Den. Firmante")
@@ -331,10 +332,10 @@ if uploaded_file:
         df_firmante_especifico = df_firmantes[df_firmantes["Den. Firmante"] == firmante_seleccionado_global]
         df_crudos_firmante = preparar_datos_crudos(df_firmante_especifico)
         
-        styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '16px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '16px')]}])
+        styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '18px', 'padding': '6px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
         st.dataframe(
             styled_crudos,
-            use_container_width=False,
+            use_container_width=True, # Ajuste para que se expanda a lo ancho
             column_config={
                 "Den. Firmante": st.column_config.TextColumn("Den. Firmante", width="large"),
                 "Motivo Rechazo": st.column_config.TextColumn("Motivo Rechazo", width="large")
@@ -416,8 +417,8 @@ if uploaded_file:
                 st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_prob_financieros_4m}</b></div>", unsafe_allow_html=True)
 
             colA_4m, colB_4m = st.columns(2)
-            colA_4m.markdown(f"<div style='font-size:26px; font-weight:bold; color:green;'>✅ % Acreditado: {pct_acreditado_4m:.2f}%</div>", unsafe_allow_html=True)
-            colB_4m.markdown(f"<div style='font-size:26px; font-weight:bold; color:green;'>❌ % Rechazados: {pct_prob_financieros_4m:.2f}%</div>", unsafe_allow_html=True)
+            colA_4m.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>✅ % Acreditado: {pct_acreditado_4m:.2f}%</div>", unsafe_allow_html=True)
+            colB_4m.markdown(f"<div style='font-size:26px; font-weight:bold; color:red; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros_4m:.2f}%</div>", unsafe_allow_html=True)
 
             # Tabla de firmantes (Acreditados + Problemas Financieros) - 4M
             df_firmantes_4m = df_4m[(df_4m["Estado"] == "ACREDITADO") | mask_prob_financieros_4m].copy()
@@ -479,10 +480,10 @@ if uploaded_file:
                 df_firmante_especifico_4m = df_firmantes_4m[df_firmantes_4m["Den. Firmante"] == firmante_seleccionado_4m]
                 df_crudos_firmante_4m = preparar_datos_crudos(df_firmante_especifico_4m)
                 
-                styled_crudos_4m = df_crudos_firmante_4m.style.set_properties(**{'font-size': '16px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '16px')]}])
+                styled_crudos_4m = df_crudos_firmante_4m.style.set_properties(**{'font-size': '18px', 'padding': '6px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
                 st.dataframe(
                     styled_crudos_4m,
-                    use_container_width=False,
+                    use_container_width=True, # Ajuste para expandir
                     column_config={
                         "Den. Firmante": st.column_config.TextColumn("Den. Firmante", width="large"),
                         "Motivo Rechazo": st.column_config.TextColumn("Motivo Rechazo", width="large")
