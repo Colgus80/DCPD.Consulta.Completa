@@ -152,6 +152,9 @@ def preparar_datos_crudos(df_in):
         df_out["Fecha Acreditación"] = pd.to_datetime(df_out["Fecha Acreditación"], errors='coerce').dt.strftime('%d/%m/%Y')
     if "Monto" in df_out.columns:
         df_out["Monto"] = df_out["Monto"].apply(fmt_monto)
+    if "CUIT" in df_out.columns:
+        # Convierte a texto, corta en el punto si hay decimales, y limpia los vacíos
+        df_out["CUIT"] = df_out["CUIT"].astype(str).str.split('.').str[0].replace('nan', '')
         
     orden_ideal = ["Den. Socio", "Tipo Op.", "CUIT", "Den. Firmante", "Monto", "Fecha Acreditación", "Estado", "Motivo Rechazo"]
     orden_final = [col for col in orden_ideal if col in df_out.columns]
@@ -345,7 +348,7 @@ if uploaded_file:
         styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '18px', 'padding': '6px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
         st.dataframe(
             styled_crudos,
-            use_container_width=True, # Ajuste para que se expanda a lo ancho
+            use_container_width=True, 
             column_config={
                 "Den. Firmante": st.column_config.TextColumn("Den. Firmante", width="large"),
                 "Motivo Rechazo": st.column_config.TextColumn("Motivo Rechazo", width="large")
