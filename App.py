@@ -182,6 +182,16 @@ if uploaded_file:
     df["Tipo Op."] = df["Tipo Op."].astype(str).str.strip().str.replace('"', '')
     df = df[df["Tipo Op."] == "CO"].copy()
 
+    # --- VALIDACIÓN NUEVA: COMPROBAR SI HAY OPERACIONES DE COMPRA (CO) ---
+    if df.empty:
+        st.markdown(
+            "<div style='font-size:20px; font-weight:bold; color:blue; padding:10px; background-color:#e6f2ff; border-radius:5px; border-left:5px solid blue;'>"
+            "ℹ️ El socio no registró operaciones de descuento de CPD (compra) sino solo Custodia."
+            "</div>", unsafe_allow_html=True
+        )
+        st.stop()
+    # -----------------------------------------------------------------------
+
     if "Motivo Rechazo" not in df.columns:
         df["Motivo Rechazo"] = ""
     df["Motivo Rechazo"] = df["Motivo Rechazo"].astype(str)
@@ -296,7 +306,7 @@ if uploaded_file:
         st.info(f"**Descontó {cant_total_operado} valores por un total de {fmt_monto(total_operado)} con un margen de rechazos del {pct_prob_financieros:.2f}%.**")
 
     # -----------------------------
-    # Tabla de firmantes SOLO PROBLEMAS FINANCIEROS
+    # Tabla de firmantes SOLO PROBLEMAS FINANCIEROS (TÍTULO ACTUALIZADO)
     # -----------------------------
     firmantes_prob_financieros = (
         df[mask_prob_financieros].groupby("Den. Firmante")
