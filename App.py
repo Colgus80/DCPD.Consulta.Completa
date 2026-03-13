@@ -269,7 +269,7 @@ if uploaded_file:
     # -----------------------------
     colA, colB = st.columns(2)
     colA.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>✅ % Acreditado: {pct_acreditado:.2f}%</div>", unsafe_allow_html=True)
-    colB.markdown(f"<div style='font-size:26px; font-weight:bold; color:red; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros:.2f}%</div>", unsafe_allow_html=True)
+    colB.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros:.2f}%</div>", unsafe_allow_html=True)
 
     # -----------------------------
     # Tabla de firmantes (Acreditados + Problemas Financieros)
