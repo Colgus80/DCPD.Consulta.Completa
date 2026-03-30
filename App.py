@@ -87,7 +87,7 @@ def fmt_monto(x):
         return "$ 0"
 
 # -----------------------------
-# Mostrar tabla (Fuente ampliada + Ancho expandido + Alineación Numérica)
+# Mostrar tabla (Fuente ampliada + Ancho expandido)
 # -----------------------------
 def mostrar_tabla_estilizada(df_to_show):
     df_to_show = df_to_show.copy()
@@ -95,27 +95,18 @@ def mostrar_tabla_estilizada(df_to_show):
     # Asignar explícitamente el índice del 1 en adelante
     df_to_show.index = range(1, len(df_to_show) + 1)
             
-    # Identificamos qué columnas contienen montos o porcentajes
-    cols_derecha = [c for c in df_to_show.columns if c in ["Monto", "ACREDITADO", "RECHAZADO", "Total_Firmante", "% Concentración"]]
-    
-    # Agrandar la fuente a 18px para mejor lectura
+    # Agrandar la fuente a 18px para mejor lectura en alta resolución
     styled = df_to_show.style.set_properties(**{
         'font-size': '18px',
         'padding': '6px'
-    })
-    
-    # Aplicar alineación a la derecha solo a los montos/porcentajes
-    if cols_derecha:
-        styled = styled.set_properties(subset=cols_derecha, **{'text-align': 'right'})
-        
-    styled = styled.set_table_styles([
+    }).set_table_styles([
         {'selector': 'th', 'props': [('font-size', '18px')]}
     ])
     
-    # Calcular altura dinámica
+    # Calcular altura dinámica un poco más alta por la fuente más grande
     altura_dinamica = min(500, 50 + (len(df_to_show) * 40))
     
-    # Mostrar tabla
+    # use_container_width=True fuerza a la tabla a expandirse hasta los márgenes
     st.dataframe(
         styled, 
         height=altura_dinamica,
@@ -318,7 +309,7 @@ if uploaded_file:
         st.info(f"**Descontó {cant_total_operado} valores por un total de {fmt_monto(total_operado)} con un margen de rechazos del {pct_prob_financieros:.2f}%.**")
 
     # -----------------------------
-    # Tabla de firmantes SOLO PROBLEMAS FINANCIEROS
+    # Tabla de firmantes SOLO PROBLEMAS FINANCIEROS (TÍTULO ACTUALIZADO)
     # -----------------------------
     firmantes_prob_financieros = (
         df[mask_prob_financieros].groupby("Den. Firmante")
@@ -354,12 +345,7 @@ if uploaded_file:
         df_firmante_especifico = df_firmantes[df_firmantes["Den. Firmante"] == firmante_seleccionado_global]
         df_crudos_firmante = preparar_datos_crudos(df_firmante_especifico)
         
-        styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '18px', 'padding': '6px'})
-        if "Monto" in df_crudos_firmante.columns:
-            styled_crudos = styled_crudos.set_properties(subset=["Monto"], **{'text-align': 'right'})
-            
-        styled_crudos = styled_crudos.set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
-        
+        styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '18px', 'padding': '6px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
         st.dataframe(
             styled_crudos,
             use_container_width=True, 
@@ -507,12 +493,7 @@ if uploaded_file:
                 df_firmante_especifico_3m = df_firmantes_3m[df_firmantes_3m["Den. Firmante"] == firmante_seleccionado_3m]
                 df_crudos_firmante_3m = preparar_datos_crudos(df_firmante_especifico_3m)
                 
-                styled_crudos_3m = df_crudos_firmante_3m.style.set_properties(**{'font-size': '18px', 'padding': '6px'})
-                if "Monto" in df_crudos_firmante_3m.columns:
-                    styled_crudos_3m = styled_crudos_3m.set_properties(subset=["Monto"], **{'text-align': 'right'})
-                    
-                styled_crudos_3m = styled_crudos_3m.set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
-                
+                styled_crudos_3m = df_crudos_firmante_3m.style.set_properties(**{'font-size': '18px', 'padding': '6px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
                 st.dataframe(
                     styled_crudos_3m,
                     use_container_width=True, # Ajuste para expandir
