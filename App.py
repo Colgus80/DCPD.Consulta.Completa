@@ -431,7 +431,7 @@ if uploaded_file:
 
             colA_4m, colB_4m = st.columns(2)
             colA_4m.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>✅ % Acreditado: {pct_acreditado_4m:.2f}%</div>", unsafe_allow_html=True)
-            colB_4m.markdown(f"<div style='font-size:26px; font-weight:bold; color:red; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros_4m:.2f}%</div>", unsafe_allow_html=True)
+            colB_4m.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros_4m:.2f}%</div>", unsafe_allow_html=True)
 
             # Tabla de firmantes (Acreditados + Problemas Financieros) - 4M
             df_firmantes_4m = df_4m[(df_4m["Estado"] == "ACREDITADO") | mask_prob_financieros_4m].copy()
