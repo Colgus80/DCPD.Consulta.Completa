@@ -269,7 +269,7 @@ if uploaded_file:
     # -----------------------------
     colA, colB = st.columns(2)
     colA.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>✅ % Acreditado: {pct_acreditado:.2f}%</div>", unsafe_allow_html=True)
-    colB.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros:.2f}%</div>", unsafe_allow_html=True)
+    colB.markdown(f"<div style='font-size:26px; font-weight:bold; color:red; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros:.2f}%</div>", unsafe_allow_html=True)
 
     # -----------------------------
     # Tabla de firmantes (Acreditados + Problemas Financieros)
@@ -356,51 +356,51 @@ if uploaded_file:
         )
 
     # =========================================================================
-    # SECCIÓN: ANÁLISIS DE LOS ÚLTIMOS 4 MESES 
+    # SECCIÓN: ANÁLISIS DE LOS ÚLTIMOS 3 MESES 
     # =========================================================================
     if rechazados_prob_financieros > 0:
         st.markdown("---")
         
         fechas_dt = pd.to_datetime(df["Fecha Acreditación"], errors="coerce")
         fecha_actual = pd.Timestamp.today().normalize()
-        min_date_4m = fecha_actual - pd.DateOffset(months=4)
+        min_date_3m = fecha_actual - pd.DateOffset(months=3)
         
-        mask_fechas_4m = (fechas_dt >= min_date_4m) & (fechas_dt <= fecha_actual)
-        df_4m = df[mask_fechas_4m].copy()
+        mask_fechas_3m = (fechas_dt >= min_date_3m) & (fechas_dt <= fecha_actual)
+        df_3m = df[mask_fechas_3m].copy()
         
-        # BUSCAR R01, R02, R10 Y R21 EN 4 MESES
-        mask_prob_financieros_4m = (df_4m["Estado"] == "RECHAZADO") & df_4m["Motivo Rechazo"].str.contains(r"R01|R02|R10|R21", na=False, regex=True)
-        total_acreditado_4m = df_4m.loc[df_4m["Estado"] == "ACREDITADO", "Monto"].sum()
-        rechazados_prob_financieros_4m = df_4m.loc[mask_prob_financieros_4m, "Monto"].sum()
-        total_operado_4m = total_acreditado_4m + rechazados_prob_financieros_4m
+        # BUSCAR R01, R02, R10 Y R21 EN 3 MESES
+        mask_prob_financieros_3m = (df_3m["Estado"] == "RECHAZADO") & df_3m["Motivo Rechazo"].str.contains(r"R01|R02|R10|R21", na=False, regex=True)
+        total_acreditado_3m = df_3m.loc[df_3m["Estado"] == "ACREDITADO", "Monto"].sum()
+        rechazados_prob_financieros_3m = df_3m.loc[mask_prob_financieros_3m, "Monto"].sum()
+        total_operado_3m = total_acreditado_3m + rechazados_prob_financieros_3m
         
-        pct_acreditado_4m = (total_acreditado_4m / total_operado_4m * 100) if total_operado_4m > 0 else 0.0
-        pct_prob_financieros_4m = (rechazados_prob_financieros_4m / total_operado_4m * 100) if total_operado_4m > 0 else 0.0
+        pct_acreditado_3m = (total_acreditado_3m / total_operado_3m * 100) if total_operado_3m > 0 else 0.0
+        pct_prob_financieros_3m = (rechazados_prob_financieros_3m / total_operado_3m * 100) if total_operado_3m > 0 else 0.0
 
         # El título siempre aparece si hubo un rechazo global
         st.markdown(
             f"""
             <div style="font-size:24px; font-weight:bold; color:#d62728; margin-bottom:10px;">
-            🔎 Foco de Riesgo: Últimos 4 Meses (Desde {min_date_4m.strftime('%d/%m/%Y')} hasta Hoy)
+            🔎 Foco de Riesgo: Últimos 3 Meses (Desde {min_date_3m.strftime('%d/%m/%Y')} hasta Hoy)
             </div>
             """, unsafe_allow_html=True
         )
 
         # Evaluar los 3 escenarios
-        if total_operado_4m == 0:
-            st.info("Durante los últimos 4 meses no ha registrado operatoria en DCPD")
+        if total_operado_3m == 0:
+            st.info("Durante los últimos 3 meses no ha registrado operatoria en DCPD")
             
         else:
-            if rechazados_prob_financieros_4m == 0:
-                st.info(f"Durante los últimos 4 meses la operatoria en DCPD totalizó **{fmt_monto(total_operado_4m)}**, sin registrar rechazos.")
+            if rechazados_prob_financieros_3m == 0:
+                st.info(f"Durante los últimos 3 meses la operatoria en DCPD totalizó **{fmt_monto(total_operado_3m)}**, sin registrar rechazos.")
             else:
-                df_4m_fechas = df_4m.copy()
-                df_4m_fechas["Fecha Acreditación"] = pd.to_datetime(df_4m_fechas["Fecha Acreditación"], errors="coerce")
-                df_4m_fechas["Mes_Anio"] = df_4m_fechas["Fecha Acreditación"].dt.strftime('%m-%Y')
-                rechazos_por_mes = df_4m_fechas[mask_prob_financieros_4m].groupby("Mes_Anio")["Monto"].sum()
+                df_3m_fechas = df_3m.copy()
+                df_3m_fechas["Fecha Acreditación"] = pd.to_datetime(df_3m_fechas["Fecha Acreditación"], errors="coerce")
+                df_3m_fechas["Mes_Anio"] = df_3m_fechas["Fecha Acreditación"].dt.strftime('%m-%Y')
+                rechazos_por_mes = df_3m_fechas[mask_prob_financieros_3m].groupby("Mes_Anio")["Monto"].sum()
                 
                 if not rechazos_por_mes.empty:
-                    meses_pct = (rechazos_por_mes / rechazados_prob_financieros_4m * 100).sort_values(ascending=False)
+                    meses_pct = (rechazos_por_mes / rechazados_prob_financieros_3m * 100).sort_values(ascending=False)
                     meses_pct_int = meses_pct.round().astype(int)
                     
                     diferencia = 100 - meses_pct_int.sum()
@@ -411,54 +411,54 @@ if uploaded_file:
                 else:
                     str_meses = "Ninguno (0%)"
 
-                st.info(f"**Durante los últimos 4 meses la operatoria en DCPD totalizó {fmt_monto(total_operado_4m)}, con un margen de rechazos del {pct_prob_financieros_4m:.2f}%, concentrados en los meses de {str_meses}.**")
+                st.info(f"**Durante los últimos 3 meses la operatoria en DCPD totalizó {fmt_monto(total_operado_3m)}, con un margen de rechazos del {pct_prob_financieros_3m:.2f}%, concentrados en los meses de {str_meses}.**")
 
-            # Renderizamos las métricas y cuadros correspondientes a los 4 meses
-            cant_total_operado_4m = len(df_4m[(df_4m["Estado"] == "ACREDITADO") | mask_prob_financieros_4m])
-            cant_acreditados_4m = len(df_4m[df_4m["Estado"] == "ACREDITADO"])
-            cant_prob_financieros_4m = len(df_4m[mask_prob_financieros_4m])
+            # Renderizamos las métricas y cuadros correspondientes a los 3 meses
+            cant_total_operado_3m = len(df_3m[(df_3m["Estado"] == "ACREDITADO") | mask_prob_financieros_3m])
+            cant_acreditados_3m = len(df_3m[df_3m["Estado"] == "ACREDITADO"])
+            cant_prob_financieros_3m = len(df_3m[mask_prob_financieros_3m])
 
-            col1_4m, col2_4m, col3_4m = st.columns(3)
-            with col1_4m:
-                st.metric("📦 Total Operado (4M)", fmt_monto(total_operado_4m))
-                st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_total_operado_4m}</b></div>", unsafe_allow_html=True)
-            with col2_4m:
-                st.metric("💰 Total Acreditado (4M)", fmt_monto(total_acreditado_4m))
-                st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_acreditados_4m}</b></div>", unsafe_allow_html=True)
-            with col3_4m:
-                st.metric("❌ Rechazados (4M)", fmt_monto(rechazados_prob_financieros_4m))
-                st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_prob_financieros_4m}</b></div>", unsafe_allow_html=True)
+            col1_3m, col2_3m, col3_3m = st.columns(3)
+            with col1_3m:
+                st.metric("📦 Total Operado (3M)", fmt_monto(total_operado_3m))
+                st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_total_operado_3m}</b></div>", unsafe_allow_html=True)
+            with col2_3m:
+                st.metric("💰 Total Acreditado (3M)", fmt_monto(total_acreditado_3m))
+                st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_acreditados_3m}</b></div>", unsafe_allow_html=True)
+            with col3_3m:
+                st.metric("❌ Rechazados (3M)", fmt_monto(rechazados_prob_financieros_3m))
+                st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_prob_financieros_3m}</b></div>", unsafe_allow_html=True)
 
-            colA_4m, colB_4m = st.columns(2)
-            colA_4m.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>✅ % Acreditado: {pct_acreditado_4m:.2f}%</div>", unsafe_allow_html=True)
-            colB_4m.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros_4m:.2f}%</div>", unsafe_allow_html=True)
+            colA_3m, colB_3m = st.columns(2)
+            colA_3m.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>✅ % Acreditado: {pct_acreditado_3m:.2f}%</div>", unsafe_allow_html=True)
+            colB_3m.markdown(f"<div style='font-size:26px; font-weight:bold; color:red; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros_3m:.2f}%</div>", unsafe_allow_html=True)
 
-            # Tabla de firmantes (Acreditados + Problemas Financieros) - 4M
-            df_firmantes_4m = df_4m[(df_4m["Estado"] == "ACREDITADO") | mask_prob_financieros_4m].copy()
-            df_firmantes_4m["Tipo"] = df_firmantes_4m.apply(
+            # Tabla de firmantes (Acreditados + Problemas Financieros) - 3M
+            df_firmantes_3m = df_3m[(df_3m["Estado"] == "ACREDITADO") | mask_prob_financieros_3m].copy()
+            df_firmantes_3m["Tipo"] = df_firmantes_3m.apply(
                 lambda row: "ACREDITADO" if row["Estado"] == "ACREDITADO" else "RECHAZADO", axis=1
             )
 
-            firmantes_4m = df_firmantes_4m.groupby(["Den. Firmante", "Tipo"])["Monto"].sum().unstack(fill_value=0).reset_index()
-            if "ACREDITADO" not in firmantes_4m.columns: firmantes_4m["ACREDITADO"] = 0
-            if "RECHAZADO" not in firmantes_4m.columns: firmantes_4m["RECHAZADO"] = 0
+            firmantes_3m = df_firmantes_3m.groupby(["Den. Firmante", "Tipo"])["Monto"].sum().unstack(fill_value=0).reset_index()
+            if "ACREDITADO" not in firmantes_3m.columns: firmantes_3m["ACREDITADO"] = 0
+            if "RECHAZADO" not in firmantes_3m.columns: firmantes_3m["RECHAZADO"] = 0
 
-            firmantes_4m["Total_Firmante"] = firmantes_4m["ACREDITADO"] + firmantes_4m["RECHAZADO"]
-            firmantes_4m["% Concentración"] = firmantes_4m["Total_Firmante"] / total_operado_4m * 100
-            firmantes_4m = firmantes_4m.sort_values("Total_Firmante", ascending=False).reset_index(drop=True)
+            firmantes_3m["Total_Firmante"] = firmantes_3m["ACREDITADO"] + firmantes_3m["RECHAZADO"]
+            firmantes_3m["% Concentración"] = firmantes_3m["Total_Firmante"] / total_operado_3m * 100
+            firmantes_3m = firmantes_3m.sort_values("Total_Firmante", ascending=False).reset_index(drop=True)
 
-            firmantes_4m_disp = firmantes_4m.copy()
-            firmantes_4m_disp["ACREDITADO"] = firmantes_4m_disp["ACREDITADO"].apply(fmt_monto)
-            firmantes_4m_disp["RECHAZADO"] = firmantes_4m_disp["RECHAZADO"].apply(fmt_monto)
-            firmantes_4m_disp["Total_Firmante"] = firmantes_4m_disp["Total_Firmante"].apply(fmt_monto)
-            firmantes_4m_disp["% Concentración"] = firmantes_4m_disp["% Concentración"].apply(lambda x: f"{x:.2f}%")
+            firmantes_3m_disp = firmantes_3m.copy()
+            firmantes_3m_disp["ACREDITADO"] = firmantes_3m_disp["ACREDITADO"].apply(fmt_monto)
+            firmantes_3m_disp["RECHAZADO"] = firmantes_3m_disp["RECHAZADO"].apply(fmt_monto)
+            firmantes_3m_disp["Total_Firmante"] = firmantes_3m_disp["Total_Firmante"].apply(fmt_monto)
+            firmantes_3m_disp["% Concentración"] = firmantes_3m_disp["% Concentración"].apply(lambda x: f"{x:.2f}%")
 
-            st.subheader("👤 Top 10 Firmantes (sobre total operado) - Últimos 4 Meses")
-            mostrar_tabla_estilizada(firmantes_4m_disp)
+            st.subheader("👤 Top 10 Firmantes (sobre total operado) - Últimos 3 Meses")
+            mostrar_tabla_estilizada(firmantes_3m_disp)
 
-            # Tabla de firmantes SOLO PROBLEMAS FINANCIEROS - 4M
-            firmantes_prob_financieros_4m = (
-                df_4m[mask_prob_financieros_4m].groupby("Den. Firmante")
+            # Tabla de firmantes SOLO PROBLEMAS FINANCIEROS - 3M
+            firmantes_prob_financieros_3m = (
+                df_3m[mask_prob_financieros_3m].groupby("Den. Firmante")
                 .agg(
                     Monto=("Monto", "sum"),
                     Motivo_Rechazo=("Motivo Rechazo", lambda x: " | ".join(sorted(set(x.dropna().astype(str).str.strip()))))
@@ -468,34 +468,34 @@ if uploaded_file:
                 .sort_values("Monto", ascending=False)
             )
 
-            if not firmantes_prob_financieros_4m.empty:
-                firmantes_prob_financieros_4m["% Concentración"] = firmantes_prob_financieros_4m["Monto"] / rechazados_prob_financieros_4m * 100 if rechazados_prob_financieros_4m > 0 else 0
-                firmantes_prob_financieros_4m["Monto"] = firmantes_prob_financieros_4m["Monto"].apply(fmt_monto)
-                firmantes_prob_financieros_4m["% Concentración"] = firmantes_prob_financieros_4m["% Concentración"].apply(lambda x: f"{x:.2f}%")
+            if not firmantes_prob_financieros_3m.empty:
+                firmantes_prob_financieros_3m["% Concentración"] = firmantes_prob_financieros_3m["Monto"] / rechazados_prob_financieros_3m * 100 if rechazados_prob_financieros_3m > 0 else 0
+                firmantes_prob_financieros_3m["Monto"] = firmantes_prob_financieros_3m["Monto"].apply(fmt_monto)
+                firmantes_prob_financieros_3m["% Concentración"] = firmantes_prob_financieros_3m["% Concentración"].apply(lambda x: f"{x:.2f}%")
                 
-                firmantes_prob_financieros_4m = firmantes_prob_financieros_4m[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
+                firmantes_prob_financieros_3m = firmantes_prob_financieros_3m[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
 
-                st.subheader("👤 Totales Rechazados por Firmante (solo rechazos por problemas financieros) - Últimos 4 Meses")
-                mostrar_tabla_estilizada(firmantes_prob_financieros_4m)
+                st.subheader("👤 Totales Rechazados por Firmante (solo rechazos por problemas financieros) - Últimos 3 Meses")
+                mostrar_tabla_estilizada(firmantes_prob_financieros_3m)
             else:
-                st.success("No hay rechazos financieros en los últimos 4 meses.")
+                st.success("No hay rechazos financieros en los últimos 3 meses.")
 
             # -----------------------------
-            # VISOR DE CHEQUES POR FIRMANTE (ÚLTIMOS 4 MESES)
+            # VISOR DE CHEQUES POR FIRMANTE (ÚLTIMOS 3 MESES)
             # -----------------------------
             st.markdown("---")
-            st.subheader("🔍 Visor Rápido de Cheques por Firmante (Últimos 4 Meses)")
+            st.subheader("🔍 Visor Rápido de Cheques por Firmante (Últimos 3 Meses)")
             
-            lista_firmantes_4m = sorted(df_firmantes_4m["Den. Firmante"].unique().tolist())
-            firmante_seleccionado_4m = st.selectbox("Elegí un Firmante (4 Meses):", ["-- Seleccionar Firmante --"] + lista_firmantes_4m, key="visor_4m")
+            lista_firmantes_3m = sorted(df_firmantes_3m["Den. Firmante"].unique().tolist())
+            firmante_seleccionado_3m = st.selectbox("Elegí un Firmante (3 Meses):", ["-- Seleccionar Firmante --"] + lista_firmantes_3m, key="visor_3m")
             
-            if firmante_seleccionado_4m != "-- Seleccionar Firmante --":
-                df_firmante_especifico_4m = df_firmantes_4m[df_firmantes_4m["Den. Firmante"] == firmante_seleccionado_4m]
-                df_crudos_firmante_4m = preparar_datos_crudos(df_firmante_especifico_4m)
+            if firmante_seleccionado_3m != "-- Seleccionar Firmante --":
+                df_firmante_especifico_3m = df_firmantes_3m[df_firmantes_3m["Den. Firmante"] == firmante_seleccionado_3m]
+                df_crudos_firmante_3m = preparar_datos_crudos(df_firmante_especifico_3m)
                 
-                styled_crudos_4m = df_crudos_firmante_4m.style.set_properties(**{'font-size': '18px', 'padding': '6px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
+                styled_crudos_3m = df_crudos_firmante_3m.style.set_properties(**{'font-size': '18px', 'padding': '6px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
                 st.dataframe(
-                    styled_crudos_4m,
+                    styled_crudos_3m,
                     use_container_width=True, # Ajuste para expandir
                     column_config={
                         "Den. Firmante": st.column_config.TextColumn("Den. Firmante", width="large"),
