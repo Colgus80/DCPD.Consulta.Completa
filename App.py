@@ -2,11 +2,57 @@ import streamlit as st
 import pandas as pd
 import re
 import os
+import requests
+from bs4 import BeautifulSoup
 
 st.set_page_config(page_title="Reporte de DCPD", layout="wide")
 st.title("📊 Reporte de DCPD (valores Acreditados y Rechazados)")
 
 uploaded_file = st.file_uploader("📂 Subí tu archivo Excel ValoresAcreditados", type=["xls", "xlsx", "xlsb", "csv"])
+
+# -----------------------------
+# Consulta automática de Actividad (Simulación de búsqueda)
+# -----------------------------
+@st.cache_data(show_spinner=False)
+def obtener_actividad_cuit(cuit):
+    if not cuit or cuit == 'nan' or len(str(cuit).strip()) < 11:
+        return "CUIT Inválido"
+    
+    cuit_limpio = str(cuit).strip()
+    try:
+        # Consultamos de forma invisible en un portal público abierto
+        url = f"https://www.cuit.online/search.php?q={cuit_limpio}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=4)
+        
+        if response.status_code == 200:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Buscamos en los metadatos de la página que suelen tener el resumen limpio
+            meta_desc = soup.find('meta', attrs={'name': 'description'})
+            if meta_desc and meta_desc.get('content'):
+                desc = meta_desc.get('content')
+                # Intentamos extraer el fragmento posterior a "dedicado a" o "actividad"
+                if "dedicado a" in desc.lower():
+                    actividad = desc.lower().split("dedicado a")[1].split(".")[0].strip()
+                    return actividad.capitalize()
+                elif "actividades de" in desc.lower():
+                    actividad = desc.lower().split("actividades de")[1].split(".")[0].strip()
+                    return f"Actividades de {actividad}"
+            
+            # Alternativa: buscar bloques de texto dentro de la estructura de la página
+            for h3 in soup.find_all('h3'):
+                if "actividad" in h3.text.lower():
+                    p_actividad = h3.find_next('p')
+                    if p_actividad:
+                        return p_actividad.text.strip().capitalize()
+                        
+            return "Sin datos específicos"
+    except:
+        pass
+    return "Error de consulta"
 
 # -----------------------------
 # Lectura robusta del archivo 
@@ -87,35 +133,21 @@ def fmt_monto(x):
         return "$ 0"
 
 # -----------------------------
-# Mostrar tabla (Fuente ampliada + Ancho expandido + Alineación Numérica)
+# Mostrar tabla (Fuente ampliada + Ancho expandido)
 # -----------------------------
 def mostrar_tabla_estilizada(df_to_show):
     df_to_show = df_to_show.copy()
-    
-    # Asignar explícitamente el índice del 1 en adelante
     df_to_show.index = range(1, len(df_to_show) + 1)
             
-    # Identificamos qué columnas contienen montos o porcentajes
-    cols_derecha = [c for c in df_to_show.columns if c in ["Monto", "ACREDITADO", "RECHAZADO", "Total_Firmante", "% Concentración"]]
-    
-    # Agrandar la fuente a 18px para mejor lectura
     styled = df_to_show.style.set_properties(**{
         'font-size': '18px',
         'padding': '6px'
-    })
-    
-    # Aplicar alineación a la derecha solo a los montos/porcentajes
-    if cols_derecha:
-        styled = styled.set_properties(subset=cols_derecha, **{'text-align': 'right'})
-        
-    styled = styled.set_table_styles([
+    }).set_table_styles([
         {'selector': 'th', 'props': [('font-size', '18px')]}
     ])
     
-    # Calcular altura dinámica
     altura_dinamica = min(500, 50 + (len(df_to_show) * 40))
     
-    # Mostrar tabla configurando explícitamente CUIT como texto
     st.dataframe(
         styled, 
         height=altura_dinamica,
@@ -123,12 +155,13 @@ def mostrar_tabla_estilizada(df_to_show):
         column_config={
             "CUIT": st.column_config.TextColumn("CUIT"),
             "Den. Firmante": st.column_config.TextColumn("Den. Firmante", width="large"),
+            "Actividad": st.column_config.TextColumn("Actividad", width="large"),
             "Motivo del rechazo": st.column_config.TextColumn("Motivo del rechazo", width="large")
         }
     )
 
 # -----------------------------
-# Filtro y preparador para Datos Crudos (Visor)
+# Filtro y preparador para Datos Crudos
 # -----------------------------
 def preparar_datos_crudos(df_in):
     mapeo_columnas = {
@@ -184,11 +217,8 @@ if uploaded_file:
         st.stop()
 
     df.columns = df.columns.astype(str).str.strip().str.replace('"', '')
-    
-    # Renombrar columnas clave de antemano para poder agrupar por CUIT en las tablas
     df.rename(columns={"CUI": "CUIT", "Den.Firmante": "Den. Firmante"}, inplace=True)
     
-    # Limpieza del CUIT principal
     if "CUIT" in df.columns:
         df["CUIT"] = df["CUIT"].astype(str).str.split('.').str[0].replace('nan', '').str.strip()
     else:
@@ -203,7 +233,6 @@ if uploaded_file:
     df["Tipo Op."] = df["Tipo Op."].astype(str).str.strip().str.replace('"', '')
     df = df[df["Tipo Op."] == "CO"].copy()
 
-    # --- VALIDACIÓN: COMPROBAR SI HAY OPERACIONES DE COMPRA (CO) ---
     if df.empty:
         st.markdown(
             "<div style='font-size:20px; font-weight:bold; color:blue; padding:10px; background-color:#e6f2ff; border-radius:5px; border-left:5px solid blue;'>"
@@ -223,22 +252,15 @@ if uploaded_file:
     )
     df["Monto"] = df["_monto_texto"].apply(parse_amount_from_text)
 
-    # --- Totales ---
     total_acreditado = df.loc[df["Estado"] == "ACREDITADO", "Monto"].sum()
     mask_rechazo = df["Estado"] == "RECHAZADO"
-    
-    # BUSCAR R01, R02, R10 Y R21 (PROBLEMAS FINANCIEROS)
     mask_prob_financieros = mask_rechazo & df["Motivo Rechazo"].str.contains(r"R01|R02|R10|R21", na=False, regex=True)
     rechazados_prob_financieros = df.loc[mask_prob_financieros, "Monto"].sum()
-
     total_operado = total_acreditado + rechazados_prob_financieros
 
     pct_acreditado = (total_acreditado / total_operado * 100) if total_operado > 0 else 0.0
     pct_prob_financieros = (rechazados_prob_financieros / total_operado * 100) if total_operado > 0 else 0.0
 
-    # -----------------------------
-    # Socio + Lapso temporal
-    # -----------------------------
     try:
         fechas = pd.to_datetime(df["Fecha Acreditación"], errors="coerce")
         socio = df["Den. Socio"].dropna().unique()[0] if "Den. Socio" in df.columns else ""
@@ -259,9 +281,6 @@ if uploaded_file:
     except Exception as e:
         st.warning(f"No se pudo procesar fechas o socio: {e}")
 
-    # -----------------------------
-    # Totales + Cantidad de cheques
-    # -----------------------------
     cant_total_operado = len(df[(df["Estado"] == "ACREDITADO") | mask_prob_financieros])
     cant_acreditados = len(df[df["Estado"] == "ACREDITADO"])
     cant_prob_financieros = len(df[mask_prob_financieros])
@@ -277,57 +296,44 @@ if uploaded_file:
         st.metric("❌ Rechazados", fmt_monto(rechazados_prob_financieros))
         st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_prob_financieros}</b></div>", unsafe_allow_html=True)
 
-    # -----------------------------
-    # % Acreditado y Rechazado
-    # -----------------------------
     colA, colB = st.columns(2)
     colA.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>✅ % Acreditado: {pct_acreditado:.2f}%</div>", unsafe_allow_html=True)
     colB.markdown(f"<div style='font-size:26px; font-weight:bold; color:red; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros:.2f}%</div>", unsafe_allow_html=True)
 
-    # -----------------------------
-    # Tabla de firmantes (Acreditados + Problemas Financieros)
-    # -----------------------------
+    # --- TABLA GLOBAL TOP 10 (CON ACTIVIDAD AUTOMÁTICA) ---
     df_firmantes = df[(df["Estado"] == "ACREDITADO") | (mask_prob_financieros)].copy()
-    df_firmantes["Tipo"] = df_firmantes.apply(
-        lambda row: "ACREDITADO" if row["Estado"] == "ACREDITADO" else "RECHAZADO", axis=1
-    )
+    df_firmantes["Tipo"] = df_firmantes.apply(lambda row: "ACREDITADO" if row["Estado"] == "ACREDITADO" else "RECHAZADO", axis=1)
 
-    # Agrupamos ahora incluyendo el CUIT
-    firmantes = (
-        df_firmantes.groupby(["CUIT", "Den. Firmante", "Tipo"])["Monto"]
-        .sum()
-        .unstack(fill_value=0)
-        .reset_index()
-    )
-    firmantes.columns.name = None # Limpiamos el nombre del índice generado por el unstack
+    firmantes = df_firmantes.groupby(["CUIT", "Den. Firmante", "Tipo"])["Monto"].sum().unstack(fill_value=0).reset_index()
+    firmantes.columns.name = None
 
     if "ACREDITADO" not in firmantes.columns: firmantes["ACREDITADO"] = 0
     if "RECHAZADO" not in firmantes.columns: firmantes["RECHAZADO"] = 0
 
     firmantes["Total_Firmante"] = firmantes["ACREDITADO"] + firmantes["RECHAZADO"]
     firmantes["% Concentración"] = firmantes["Total_Firmante"] / total_operado * 100
-
     firmantes = firmantes.sort_values("Total_Firmante", ascending=False).reset_index(drop=True)
     
-    # Reordenamos para que CUIT quede primero
-    firmantes = firmantes[["CUIT", "Den. Firmante", "ACREDITADO", "RECHAZADO", "Total_Firmante", "% Concentración"]]
+    # Consultamos las actividades en paralelo para el Top 10 visible
+    with st.spinner("Consultando actividades económicas de los principales firmantes..."):
+        firmantes["Actividad"] = firmantes["CUIT"].apply(obtener_actividad_cuit)
 
-    firmantes["ACREDITADO"] = firmantes["ACREDITADO"].apply(fmt_monto)
-    firmantes["RECHAZADO"] = firmantes["RECHAZADO"].apply(fmt_monto)
-    firmantes["Total_Firmante"] = firmantes["Total_Firmante"].apply(fmt_monto)
-    firmantes["% Concentración"] = firmantes["% Concentración"].apply(lambda x: f"{x:.2f}%")
+    firmantes = firmantes[["CUIT", "Den. Firmante", "Actividad", "ACREDITADO", "RECHAZADO", "Total_Firmante", "% Concentración"]]
+    firmantes_disp = firmantes.copy()
+    firmantes_disp["ACREDITADO"] = firmantes_disp["ACREDITADO"].apply(fmt_monto)
+    firmantes_disp["RECHAZADO"] = firmantes_disp["RECHAZADO"].apply(fmt_monto)
+    firmantes_disp["Total_Firmante"] = firmantes_disp["Total_Firmante"].apply(fmt_monto)
+    firmantes_disp["% Concentración"] = firmantes_disp["% Concentración"].apply(lambda x: f"{x:.2f}%")
 
     st.subheader("👤 Top 10 Firmantes (sobre total operado)")
-    mostrar_tabla_estilizada(firmantes)
+    mostrar_tabla_estilizada(firmantes_disp)
 
     if rechazados_prob_financieros == 0:
         st.info(f"**Descontó {cant_total_operado} valores por un total de {fmt_monto(total_operado)} sin registrar rechazos.**")
     else:
         st.info(f"**Descontó {cant_total_operado} valores por un total de {fmt_monto(total_operado)} con un margen de rechazos del {pct_prob_financieros:.2f}%.**")
 
-    # -----------------------------
-    # Tabla de firmantes SOLO PROBLEMAS FINANCIEROS
-    # -----------------------------
+    # --- TABLA SÓLO RECHAZOS (CON ACTIVIDAD AUTOMÁTICA) ---
     firmantes_prob_financieros = (
         df[mask_prob_financieros].groupby(["CUIT", "Den. Firmante"])
         .agg(
@@ -340,11 +346,12 @@ if uploaded_file:
     )
 
     if not firmantes_prob_financieros.empty:
+        firmantes_prob_financieros["Actividad"] = firmantes_prob_financieros["CUIT"].apply(obtener_actividad_cuit)
         firmantes_prob_financieros["% Concentración"] = firmantes_prob_financieros["Monto"] / rechazados_prob_financieros * 100 if rechazados_prob_financieros > 0 else 0
         firmantes_prob_financieros["Monto"] = firmantes_prob_financieros["Monto"].apply(fmt_monto)
         firmantes_prob_financieros["% Concentración"] = firmantes_prob_financieros["% Concentración"].apply(lambda x: f"{x:.2f}%")
         
-        firmantes_prob_financieros = firmantes_prob_financieros[["CUIT", "Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
+        firmantes_prob_financieros = firmantes_prob_financieros[["CUIT", "Den. Firmante", "Actividad", "Monto", "% Concentración", "Motivo del rechazo"]]
     
         st.subheader("👤 Totales Rechazados por Firmante (solo rechazos por problemas financieros)")
         mostrar_tabla_estilizada(firmantes_prob_financieros)
@@ -354,7 +361,6 @@ if uploaded_file:
     # -----------------------------
     st.markdown("---")
     st.subheader("🔍 Visor Rápido de Cheques por Firmante")
-    st.markdown("Seleccioná un firmante para ver el detalle exacto de sus cheques acreditados y rechazados.")
     
     lista_firmantes_global = sorted(df_firmantes["Den. Firmante"].unique().tolist())
     firmante_seleccionado_global = st.selectbox("Elegí un Firmante:", ["-- Seleccionar Firmante --"] + lista_firmantes_global, key="visor_global")
@@ -363,20 +369,14 @@ if uploaded_file:
         df_firmante_especifico = df_firmantes[df_firmantes["Den. Firmante"] == firmante_seleccionado_global]
         df_crudos_firmante = preparar_datos_crudos(df_firmante_especifico)
         
-        # --- LINK DE ACTIVIDAD ---
         if "CUIT" in df_crudos_firmante.columns and not df_crudos_firmante.empty:
             cuit_f = df_crudos_firmante["CUIT"].iloc[0]
             if cuit_f:
+                act_f = obtener_actividad_cuit(cuit_f)
                 url_cuit = f"https://www.cuit.online/search.php?q={cuit_f}"
-                st.info(f"ℹ️ **CUIT:** {cuit_f} | 🌐 [Ver Actividad Económica y Estado Fiscal en Cuit.online]({url_cuit})")
-        # -------------------------
+                st.info(f"ℹ️ **CUIT:** {cuit_f} | **Actividad Detectada:** {act_f} | 🌐 [Ver Estado Fiscal Ampliado]({url_cuit})")
 
-        styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '18px', 'padding': '6px'})
-        if "Monto" in df_crudos_firmante.columns:
-            styled_crudos = styled_crudos.set_properties(subset=["Monto"], **{'text-align': 'right'})
-            
-        styled_crudos = styled_crudos.set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
-        
+        styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '18px', 'padding': '6px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
         st.dataframe(
             styled_crudos,
             use_container_width=True, 
@@ -388,7 +388,7 @@ if uploaded_file:
         )
 
     # =========================================================================
-    # SECCIÓN: ANÁLISIS DE LOS ÚLTIMOS 3 MESES 
+    # SECCIÓN: ANÁLISIS DE LOS ÚLTIMOS 3 MESES
     # =========================================================================
     if rechazados_prob_financieros > 0:
         st.markdown("---")
@@ -408,13 +408,7 @@ if uploaded_file:
         pct_acreditado_3m = (total_acreditado_3m / total_operado_3m * 100) if total_operado_3m > 0 else 0.0
         pct_prob_financieros_3m = (rechazados_prob_financieros_3m / total_operado_3m * 100) if total_operado_3m > 0 else 0.0
 
-        st.markdown(
-            f"""
-            <div style="font-size:24px; font-weight:bold; color:#d62728; margin-bottom:10px;">
-            🔎 Foco de Riesgo: Últimos 3 Meses (Desde {min_date_3m.strftime('%d/%m/%Y')} hasta Hoy)
-            </div>
-            """, unsafe_allow_html=True
-        )
+        st.markdown(f'<div style="font-size:24px; font-weight:bold; color:#d62728; margin-bottom:10px;">🔎 Foco de Riesgo: Últimos 3 Meses (Desde {min_date_3m.strftime("%d/%m/%Y")} hasta Hoy)</div>', unsafe_allow_html=True)
 
         if total_operado_3m == 0:
             st.info("Durante los últimos 3 meses no ha registrado operatoria en DCPD")
@@ -430,11 +424,9 @@ if uploaded_file:
                 if not rechazos_por_mes.empty:
                     meses_pct = (rechazos_por_mes / rechazados_prob_financieros_3m * 100).sort_values(ascending=False)
                     meses_pct_int = meses_pct.round().astype(int)
-                    
                     diferencia = 100 - meses_pct_int.sum()
                     if diferencia != 0 and len(meses_pct_int) > 0:
                         meses_pct_int.iloc[0] += diferencia
-
                     str_meses = ", ".join([f"{mes} ({pct}%)" for mes, pct in meses_pct_int.items()])
                 else:
                     str_meses = "Ninguno (0%)"
@@ -460,10 +452,9 @@ if uploaded_file:
             colA_3m.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>✅ % Acreditado: {pct_acreditado_3m:.2f}%</div>", unsafe_allow_html=True)
             colB_3m.markdown(f"<div style='font-size:26px; font-weight:bold; color:red; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros_3m:.2f}%</div>", unsafe_allow_html=True)
 
+            # --- TOP 10 REMOTOS - ÚLTIMOS 3 MESES ---
             df_firmantes_3m = df_3m[(df_3m["Estado"] == "ACREDITADO") | mask_prob_financieros_3m].copy()
-            df_firmantes_3m["Tipo"] = df_firmantes_3m.apply(
-                lambda row: "ACREDITADO" if row["Estado"] == "ACREDITADO" else "RECHAZADO", axis=1
-            )
+            df_firmantes_3m["Tipo"] = df_firmantes_3m.apply(lambda row: "ACREDITADO" if row["Estado"] == "ACREDITADO" else "RECHAZADO", axis=1)
 
             firmantes_3m = df_firmantes_3m.groupby(["CUIT", "Den. Firmante", "Tipo"])["Monto"].sum().unstack(fill_value=0).reset_index()
             firmantes_3m.columns.name = None
@@ -475,7 +466,8 @@ if uploaded_file:
             firmantes_3m["% Concentración"] = firmantes_3m["Total_Firmante"] / total_operado_3m * 100
             firmantes_3m = firmantes_3m.sort_values("Total_Firmante", ascending=False).reset_index(drop=True)
             
-            firmantes_3m = firmantes_3m[["CUIT", "Den. Firmante", "ACREDITADO", "RECHAZADO", "Total_Firmante", "% Concentración"]]
+            firmantes_3m["Actividad"] = firmantes_3m["CUIT"].apply(obtener_actividad_cuit)
+            firmantes_3m = firmantes_3m[["CUIT", "Den. Firmante", "Actividad", "ACREDITADO", "RECHAZADO", "Total_Firmante", "% Concentración"]]
 
             firmantes_3m_disp = firmantes_3m.copy()
             firmantes_3m_disp["ACREDITADO"] = firmantes_3m_disp["ACREDITADO"].apply(fmt_monto)
@@ -486,6 +478,7 @@ if uploaded_file:
             st.subheader("👤 Top 10 Firmantes (sobre total operado) - Últimos 3 Meses")
             mostrar_tabla_estilizada(firmantes_3m_disp)
 
+            # --- SÓLO RECHAZOS - ÚLTIMOS 3 MESES ---
             firmantes_prob_financieros_3m = (
                 df_3m[mask_prob_financieros_3m].groupby(["CUIT", "Den. Firmante"])
                 .agg(
@@ -498,20 +491,19 @@ if uploaded_file:
             )
 
             if not firmantes_prob_financieros_3m.empty:
+                firmantes_prob_financieros_3m["Actividad"] = firmantes_prob_financieros_3m["CUIT"].apply(obtener_actividad_cuit)
                 firmantes_prob_financieros_3m["% Concentración"] = firmantes_prob_financieros_3m["Monto"] / rechazados_prob_financieros_3m * 100 if rechazados_prob_financieros_3m > 0 else 0
                 firmantes_prob_financieros_3m["Monto"] = firmantes_prob_financieros_3m["Monto"].apply(fmt_monto)
                 firmantes_prob_financieros_3m["% Concentración"] = firmantes_prob_financieros_3m["% Concentración"].apply(lambda x: f"{x:.2f}%")
                 
-                firmantes_prob_financieros_3m = firmantes_prob_financieros_3m[["CUIT", "Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
+                firmantes_prob_financieros_3m = firmantes_prob_financieros_3m[["CUIT", "Den. Firmante", "Actividad", "Monto", "% Concentración", "Motivo del rechazo"]]
 
                 st.subheader("👤 Totales Rechazados por Firmante (solo rechazos por problemas financieros) - Últimos 3 Meses")
                 mostrar_tabla_estilizada(firmantes_prob_financieros_3m)
             else:
                 st.success("No hay rechazos financieros en los últimos 3 meses.")
 
-            # -----------------------------
-            # VISOR DE CHEQUES POR FIRMANTE (ÚLTIMOS 3 MESES)
-            # -----------------------------
+            # --- VISOR INTERACTIVO 3M ---
             st.markdown("---")
             st.subheader("🔍 Visor Rápido de Cheques por Firmante (Últimos 3 Meses)")
             
@@ -522,20 +514,14 @@ if uploaded_file:
                 df_firmante_especifico_3m = df_firmantes_3m[df_firmantes_3m["Den. Firmante"] == firmante_seleccionado_3m]
                 df_crudos_firmante_3m = preparar_datos_crudos(df_firmante_especifico_3m)
                 
-                # --- LINK DE ACTIVIDAD 3M ---
                 if "CUIT" in df_crudos_firmante_3m.columns and not df_crudos_firmante_3m.empty:
                     cuit_f_3m = df_crudos_firmante_3m["CUIT"].iloc[0]
                     if cuit_f_3m:
+                        act_f_3m = obtener_actividad_cuit(cuit_f_3m)
                         url_cuit_3m = f"https://www.cuit.online/search.php?q={cuit_f_3m}"
-                        st.info(f"ℹ️ **CUIT:** {cuit_f_3m} | 🌐 [Ver Actividad Económica y Estado Fiscal en Cuit.online]({url_cuit_3m})")
-                # ----------------------------
+                        st.info(f"ℹ️ **CUIT:** {cuit_f_3m} | **Actividad Detectada:** {act_f_3m} | 🌐 [Ver Estado Fiscal Ampliado]({url_cuit_3m})")
 
-                styled_crudos_3m = df_crudos_firmante_3m.style.set_properties(**{'font-size': '18px', 'padding': '6px'})
-                if "Monto" in df_crudos_firmante_3m.columns:
-                    styled_crudos_3m = styled_crudos_3m.set_properties(subset=["Monto"], **{'text-align': 'right'})
-                    
-                styled_crudos_3m = styled_crudos_3m.set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
-                
+                styled_crudos_3m = df_crudos_firmante_3m.style.set_properties(**{'font-size': '18px', 'padding': '6px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
                 st.dataframe(
                     styled_crudos_3m,
                     use_container_width=True, 
