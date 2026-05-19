@@ -267,7 +267,7 @@ if uploaded_file:
 
     colA, colB = st.columns(2)
     colA.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>✅ % Acreditado: {pct_acreditado:.2f}%</div>", unsafe_allow_html=True)
-    colB.markdown(f"<div style='font-size:26px; font-weight:bold; color:red; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros:.2f}%</div>", unsafe_allow_html=True)
+    colB.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros:.2f}%</div>", unsafe_allow_html=True)
 
     # --- TABLA GLOBAL TOP 10 ---
     df_firmantes = df[(df["Estado"] == "ACREDITADO") | (mask_prob_financieros)].copy()
@@ -336,8 +336,9 @@ if uploaded_file:
         if "CUIT" in df_crudos_firmante.columns and not df_crudos_firmante.empty:
             cuit_f = df_crudos_firmante["CUIT"].iloc[0]
             if cuit_f:
-                url_cuit = f"https://www.cuit.online/search.php?q={cuit_f}"
-                st.info(f"ℹ️ **CUIT:** {cuit_f} | 🌐 [Ver Estado Fiscal en Cuit.online]({url_cuit})")
+                # Actualizado a Dateas
+                url_cuit = f"https://www.dateas.com/es/cuit/{cuit_f}"
+                st.info(f"ℹ️ **CUIT:** {cuit_f} | 🌐 [Ver Estado Fiscal en Dateas]({url_cuit})")
 
         styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '18px', 'padding': '6px'})
         if "Monto" in df_crudos_firmante.columns:
@@ -483,8 +484,9 @@ if uploaded_file:
                 if "CUIT" in df_crudos_firmante_3m.columns and not df_crudos_firmante_3m.empty:
                     cuit_f_3m = df_crudos_firmante_3m["CUIT"].iloc[0]
                     if cuit_f_3m:
-                        url_cuit_3m = f"https://www.cuit.online/search.php?q={cuit_f_3m}"
-                        st.info(f"ℹ️ **CUIT:** {cuit_f_3m} | 🌐 [Ver Estado Fiscal en Cuit.online]({url_cuit_3m})")
+                        # Actualizado a Dateas
+                        url_cuit_3m = f"https://www.dateas.com/es/cuit/{cuit_f_3m}"
+                        st.info(f"ℹ️ **CUIT:** {cuit_f_3m} | 🌐 [Ver Estado Fiscal en Dateas]({url_cuit_3m})")
 
                 styled_crudos_3m = df_crudos_firmante_3m.style.set_properties(**{'font-size': '18px', 'padding': '6px'})
                 if "Monto" in df_crudos_firmante_3m.columns:
