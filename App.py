@@ -489,4 +489,59 @@ if uploaded_file:
             firmantes_prob_financieros_3m = (
                 df_3m[mask_prob_financieros_3m].groupby(["CUIT", "Den. Firmante"])
                 .agg(
-                    Monto=("Monto", "
+                    Monto=("Monto", "sum"),
+                    Motivo_Rechazo=("Motivo Rechazo", lambda x: " | ".join(sorted(set(x.dropna().astype(str).str.strip()))))
+                )
+                .reset_index()
+                .rename(columns={"Motivo_Rechazo": "Motivo del rechazo"})
+                .sort_values("Monto", ascending=False)
+            )
+
+            if not firmantes_prob_financieros_3m.empty:
+                firmantes_prob_financieros_3m["% Concentración"] = firmantes_prob_financieros_3m["Monto"] / rechazados_prob_financieros_3m * 100 if rechazados_prob_financieros_3m > 0 else 0
+                firmantes_prob_financieros_3m["Monto"] = firmantes_prob_financieros_3m["Monto"].apply(fmt_monto)
+                firmantes_prob_financieros_3m["% Concentración"] = firmantes_prob_financieros_3m["% Concentración"].apply(lambda x: f"{x:.2f}%")
+                
+                firmantes_prob_financieros_3m = firmantes_prob_financieros_3m[["CUIT", "Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
+
+                st.subheader("👤 Totales Rechazados por Firmante (solo rechazos por problemas financieros) - Últimos 3 Meses")
+                mostrar_tabla_estilizada(firmantes_prob_financieros_3m)
+            else:
+                st.success("No hay rechazos financieros en los últimos 3 meses.")
+
+            # -----------------------------
+            # VISOR DE CHEQUES POR FIRMANTE (ÚLTIMOS 3 MESES)
+            # -----------------------------
+            st.markdown("---")
+            st.subheader("🔍 Visor Rápido de Cheques por Firmante (Últimos 3 Meses)")
+            
+            lista_firmantes_3m = sorted(df_firmantes_3m["Den. Firmante"].unique().tolist())
+            firmante_seleccionado_3m = st.selectbox("Elegí un Firmante (3 Meses):", ["-- Seleccionar Firmante --"] + lista_firmantes_3m, key="visor_3m")
+            
+            if firmante_seleccionado_3m != "-- Seleccionar Firmante --":
+                df_firmante_especifico_3m = df_firmantes_3m[df_firmantes_3m["Den. Firmante"] == firmante_seleccionado_3m]
+                df_crudos_firmante_3m = preparar_datos_crudos(df_firmante_especifico_3m)
+                
+                # --- LINK DE ACTIVIDAD 3M ---
+                if "CUIT" in df_crudos_firmante_3m.columns and not df_crudos_firmante_3m.empty:
+                    cuit_f_3m = df_crudos_firmante_3m["CUIT"].iloc[0]
+                    if cuit_f_3m:
+                        url_cuit_3m = f"https://www.cuit.online/search.php?q={cuit_f_3m}"
+                        st.info(f"ℹ️ **CUIT:** {cuit_f_3m} | 🌐 [Ver Actividad Económica y Estado Fiscal en Cuit.online]({url_cuit_3m})")
+                # ----------------------------
+
+                styled_crudos_3m = df_crudos_firmante_3m.style.set_properties(**{'font-size': '18px', 'padding': '6px'})
+                if "Monto" in df_crudos_firmante_3m.columns:
+                    styled_crudos_3m = styled_crudos_3m.set_properties(subset=["Monto"], **{'text-align': 'right'})
+                    
+                styled_crudos_3m = styled_crudos_3m.set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
+                
+                st.dataframe(
+                    styled_crudos_3m,
+                    use_container_width=True, 
+                    column_config={
+                        "CUIT": st.column_config.TextColumn("CUIT"),
+                        "Den. Firmante": st.column_config.TextColumn("Den. Firmante", width="large"),
+                        "Motivo Rechazo": st.column_config.TextColumn("Motivo Rechazo", width="large")
+                    }
+                )
