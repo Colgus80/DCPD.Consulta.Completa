@@ -11,30 +11,41 @@ st.title("📊 Reporte de DCPD (valores Acreditados y Rechazados)")
 uploaded_file = st.file_uploader("📂 Subí tu archivo Excel ValoresAcreditados", type=["xls", "xlsx", "xlsb", "csv"])
 
 # -----------------------------
-# Consulta automática de Actividad (Simulación de búsqueda)
+# LIMPIEZA BLINDADA DE CUIT
+# -----------------------------
+def limpiar_cuit(val):
+    if pd.isna(val):
+        return ""
+    try:
+        # Convierte 20313124453.000000 -> 20313124453 -> "20313124453"
+        return str(int(float(val)))
+    except:
+        # Si por algún motivo tiene letras o formato raro, lo limpia
+        s = str(val).strip().split('.')[0]
+        return "" if s.lower() == 'nan' else s
+
+# -----------------------------
+# Consulta automática de Actividad
 # -----------------------------
 @st.cache_data(show_spinner=False)
-def obtener_actividad_cuit(cuit):
-    if not cuit or cuit == 'nan' or len(str(cuit).strip()) < 11:
+def obtener_actividad_cuit(cuit_raw):
+    cuit_limpio = limpiar_cuit(cuit_raw)
+    if not cuit_limpio or len(cuit_limpio) < 11:
         return "CUIT Inválido"
     
-    cuit_limpio = str(cuit).strip()
     try:
-        # Consultamos de forma invisible en un portal público abierto
         url = f"https://www.cuit.online/search.php?q={cuit_limpio}"
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
         }
-        response = requests.get(url, headers=headers, timeout=4)
+        response = requests.get(url, headers=headers, timeout=5)
         
         if response.status_code == 200:
             soup = BeautifulSoup(response.text, 'html.parser')
             
-            # Buscamos en los metadatos de la página que suelen tener el resumen limpio
             meta_desc = soup.find('meta', attrs={'name': 'description'})
             if meta_desc and meta_desc.get('content'):
                 desc = meta_desc.get('content')
-                # Intentamos extraer el fragmento posterior a "dedicado a" o "actividad"
                 if "dedicado a" in desc.lower():
                     actividad = desc.lower().split("dedicado a")[1].split(".")[0].strip()
                     return actividad.capitalize()
@@ -42,17 +53,19 @@ def obtener_actividad_cuit(cuit):
                     actividad = desc.lower().split("actividades de")[1].split(".")[0].strip()
                     return f"Actividades de {actividad}"
             
-            # Alternativa: buscar bloques de texto dentro de la estructura de la página
             for h3 in soup.find_all('h3'):
                 if "actividad" in h3.text.lower():
                     p_actividad = h3.find_next('p')
                     if p_actividad:
                         return p_actividad.text.strip().capitalize()
                         
-            return "Sin datos específicos"
-    except:
-        pass
-    return "Error de consulta"
+            return "Actividad no detallada"
+        elif response.status_code in [403, 406]:
+            return "Bloqueado por Servidor web"
+        else:
+            return "Error de consulta web"
+    except Exception:
+        return "Error de conexión"
 
 # -----------------------------
 # Lectura robusta del archivo 
@@ -133,18 +146,20 @@ def fmt_monto(x):
         return "$ 0"
 
 # -----------------------------
-# Mostrar tabla (Fuente ampliada + Ancho expandido)
+# Mostrar tabla (Fuente ampliada + Ancho expandido + Alineación)
 # -----------------------------
 def mostrar_tabla_estilizada(df_to_show):
     df_to_show = df_to_show.copy()
     df_to_show.index = range(1, len(df_to_show) + 1)
             
-    styled = df_to_show.style.set_properties(**{
-        'font-size': '18px',
-        'padding': '6px'
-    }).set_table_styles([
-        {'selector': 'th', 'props': [('font-size', '18px')]}
-    ])
+    cols_derecha = [c for c in df_to_show.columns if c in ["Monto", "ACREDITADO", "RECHAZADO", "Total_Firmante", "% Concentración"]]
+    
+    styled = df_to_show.style.set_properties(**{'font-size': '18px', 'padding': '6px'})
+    
+    if cols_derecha:
+        styled = styled.set_properties(subset=cols_derecha, **{'text-align': 'right'})
+        
+    styled = styled.set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
     
     altura_dinamica = min(500, 50 + (len(df_to_show) * 40))
     
@@ -196,7 +211,7 @@ def preparar_datos_crudos(df_in):
     if "Monto" in df_out.columns:
         df_out["Monto"] = df_out["Monto"].apply(fmt_monto)
     if "CUIT" in df_out.columns:
-        df_out["CUIT"] = df_out["CUIT"].astype(str).str.split('.').str[0].replace('nan', '').str.strip()
+        df_out["CUIT"] = df_out["CUIT"].apply(limpiar_cuit)
         
     orden_ideal = ["Den. Socio", "Tipo Op.", "CUIT", "Den. Firmante", "Monto", "Fecha Acreditación", "Estado", "Motivo Rechazo"]
     orden_final = [col for col in orden_ideal if col in df_out.columns]
@@ -220,7 +235,7 @@ if uploaded_file:
     df.rename(columns={"CUI": "CUIT", "Den.Firmante": "Den. Firmante"}, inplace=True)
     
     if "CUIT" in df.columns:
-        df["CUIT"] = df["CUIT"].astype(str).str.split('.').str[0].replace('nan', '').str.strip()
+        df["CUIT"] = df["CUIT"].apply(limpiar_cuit)
     else:
         df["CUIT"] = ""
 
@@ -314,8 +329,7 @@ if uploaded_file:
     firmantes["% Concentración"] = firmantes["Total_Firmante"] / total_operado * 100
     firmantes = firmantes.sort_values("Total_Firmante", ascending=False).reset_index(drop=True)
     
-    # Consultamos las actividades en paralelo para el Top 10 visible
-    with st.spinner("Consultando actividades económicas de los principales firmantes..."):
+    with st.spinner("Buscando actividades económicas de los firmantes principales..."):
         firmantes["Actividad"] = firmantes["CUIT"].apply(obtener_actividad_cuit)
 
     firmantes = firmantes[["CUIT", "Den. Firmante", "Actividad", "ACREDITADO", "RECHAZADO", "Total_Firmante", "% Concentración"]]
@@ -376,7 +390,12 @@ if uploaded_file:
                 url_cuit = f"https://www.cuit.online/search.php?q={cuit_f}"
                 st.info(f"ℹ️ **CUIT:** {cuit_f} | **Actividad Detectada:** {act_f} | 🌐 [Ver Estado Fiscal Ampliado]({url_cuit})")
 
-        styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '18px', 'padding': '6px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
+        styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '18px', 'padding': '6px'})
+        if "Monto" in df_crudos_firmante.columns:
+            styled_crudos = styled_crudos.set_properties(subset=["Monto"], **{'text-align': 'right'})
+            
+        styled_crudos = styled_crudos.set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
+        
         st.dataframe(
             styled_crudos,
             use_container_width=True, 
