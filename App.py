@@ -267,7 +267,7 @@ if uploaded_file:
 
     colA, colB = st.columns(2)
     colA.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>✅ % Acreditado: {pct_acreditado:.2f}%</div>", unsafe_allow_html=True)
-    colB.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros:.2f}%</div>", unsafe_allow_html=True)
+    colB.markdown(f"<div style='font-size:26px; font-weight:bold; color:red; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros:.2f}%</div>", unsafe_allow_html=True)
 
     # --- TABLA GLOBAL TOP 10 ---
     df_firmantes = df[(df["Estado"] == "ACREDITADO") | (mask_prob_financieros)].copy()
@@ -336,9 +336,10 @@ if uploaded_file:
         if "CUIT" in df_crudos_firmante.columns and not df_crudos_firmante.empty:
             cuit_f = df_crudos_firmante["CUIT"].iloc[0]
             if cuit_f:
-                # Actualizado a Dateas
-                url_cuit = f"https://www.dateas.com/es/cuit/{cuit_f}"
-                st.info(f"ℹ️ **CUIT:** {cuit_f} | 🌐 [Ver Estado Fiscal en Dateas]({url_cuit})")
+                # ENLACES BLINDADOS CONTRA FIREWALLS
+                url_google = f"https://www.google.com/search?q=cuit+{cuit_f}+actividad+economica"
+                url_bcra = f"https://www.bcra.gob.ar/BCRAyVos/Situacion_Crediticia.asp?banco=0&procedencia=1&cuit={cuit_f}"
+                st.info(f"ℹ️ **CUIT:** {cuit_f} | 🔍 [Buscar Actividad en Google]({url_google}) | 🏦 [Ver Central de Deudores BCRA]({url_bcra})")
 
         styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '18px', 'padding': '6px'})
         if "Monto" in df_crudos_firmante.columns:
@@ -419,7 +420,7 @@ if uploaded_file:
 
             colA_3m, colB_3m = st.columns(2)
             colA_3m.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>✅ % Acreditado: {pct_acreditado_3m:.2f}%</div>", unsafe_allow_html=True)
-            colB_3m.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros_3m:.2f}%</div>", unsafe_allow_html=True)
+            colB_3m.markdown(f"<div style='font-size:26px; font-weight:bold; color:red; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros_3m:.2f}%</div>", unsafe_allow_html=True)
 
             # --- TOP 10 REMOTOS - ÚLTIMOS 3 MESES ---
             df_firmantes_3m = df_3m[(df_3m["Estado"] == "ACREDITADO") | mask_prob_financieros_3m].copy()
@@ -484,9 +485,10 @@ if uploaded_file:
                 if "CUIT" in df_crudos_firmante_3m.columns and not df_crudos_firmante_3m.empty:
                     cuit_f_3m = df_crudos_firmante_3m["CUIT"].iloc[0]
                     if cuit_f_3m:
-                        # Actualizado a Dateas
-                        url_cuit_3m = f"https://www.dateas.com/es/cuit/{cuit_f_3m}"
-                        st.info(f"ℹ️ **CUIT:** {cuit_f_3m} | 🌐 [Ver Estado Fiscal en Dateas]({url_cuit_3m})")
+                        # ENLACES BLINDADOS CONTRA FIREWALLS
+                        url_google_3m = f"https://www.google.com/search?q=cuit+{cuit_f_3m}+actividad+economica"
+                        url_bcra_3m = f"https://www.bcra.gob.ar/BCRAyVos/Situacion_Crediticia.asp?banco=0&procedencia=1&cuit={cuit_f_3m}"
+                        st.info(f"ℹ️ **CUIT:** {cuit_f_3m} | 🔍 [Buscar Actividad en Google]({url_google_3m}) | 🏦 [Ver Central de Deudores BCRA]({url_bcra_3m})")
 
                 styled_crudos_3m = df_crudos_firmante_3m.style.set_properties(**{'font-size': '18px', 'padding': '6px'})
                 if "Monto" in df_crudos_firmante_3m.columns:
