@@ -87,7 +87,7 @@ def fmt_monto(x):
         return "$ 0"
 
 # -----------------------------
-# Mostrar tabla (Fuente ampliada + Ancho expandido)
+# Mostrar tabla (Fuente ampliada + Ancho expandido + Alineación Numérica)
 # -----------------------------
 def mostrar_tabla_estilizada(df_to_show):
     df_to_show = df_to_show.copy()
@@ -95,30 +95,40 @@ def mostrar_tabla_estilizada(df_to_show):
     # Asignar explícitamente el índice del 1 en adelante
     df_to_show.index = range(1, len(df_to_show) + 1)
             
-    # Agrandar la fuente a 18px para mejor lectura en alta resolución
+    # Identificamos qué columnas contienen montos o porcentajes
+    cols_derecha = [c for c in df_to_show.columns if c in ["Monto", "ACREDITADO", "RECHAZADO", "Total_Firmante", "% Concentración"]]
+    
+    # Agrandar la fuente a 18px para mejor lectura
     styled = df_to_show.style.set_properties(**{
         'font-size': '18px',
         'padding': '6px'
-    }).set_table_styles([
+    })
+    
+    # Aplicar alineación a la derecha solo a los montos/porcentajes
+    if cols_derecha:
+        styled = styled.set_properties(subset=cols_derecha, **{'text-align': 'right'})
+        
+    styled = styled.set_table_styles([
         {'selector': 'th', 'props': [('font-size', '18px')]}
     ])
     
-    # Calcular altura dinámica un poco más alta por la fuente más grande
+    # Calcular altura dinámica
     altura_dinamica = min(500, 50 + (len(df_to_show) * 40))
     
-    # use_container_width=True fuerza a la tabla a expandirse hasta los márgenes
+    # Mostrar tabla configurando explícitamente CUIT como texto
     st.dataframe(
         styled, 
         height=altura_dinamica,
         use_container_width=True, 
         column_config={
+            "CUIT": st.column_config.TextColumn("CUIT"),
             "Den. Firmante": st.column_config.TextColumn("Den. Firmante", width="large"),
             "Motivo del rechazo": st.column_config.TextColumn("Motivo del rechazo", width="large")
         }
     )
 
 # -----------------------------
-# Filtro y preparador para Datos Crudos
+# Filtro y preparador para Datos Crudos (Visor)
 # -----------------------------
 def preparar_datos_crudos(df_in):
     mapeo_columnas = {
@@ -153,7 +163,6 @@ def preparar_datos_crudos(df_in):
     if "Monto" in df_out.columns:
         df_out["Monto"] = df_out["Monto"].apply(fmt_monto)
     if "CUIT" in df_out.columns:
-        # Convierte a texto, corta en el punto si hay decimales, y limpia los vacíos
         df_out["CUIT"] = df_out["CUIT"].astype(str).str.split('.').str[0].replace('nan', '').str.strip()
         
     orden_ideal = ["Den. Socio", "Tipo Op.", "CUIT", "Den. Firmante", "Monto", "Fecha Acreditación", "Estado", "Motivo Rechazo"]
@@ -175,6 +184,15 @@ if uploaded_file:
         st.stop()
 
     df.columns = df.columns.astype(str).str.strip().str.replace('"', '')
+    
+    # Renombrar columnas clave de antemano para poder agrupar por CUIT en las tablas
+    df.rename(columns={"CUI": "CUIT", "Den.Firmante": "Den. Firmante"}, inplace=True)
+    
+    # Limpieza del CUIT principal
+    if "CUIT" in df.columns:
+        df["CUIT"] = df["CUIT"].astype(str).str.split('.').str[0].replace('nan', '').str.strip()
+    else:
+        df["CUIT"] = ""
 
     required_cols = ["Tipo Op.", "Monto Acreditado / Rechazado", "Den. Firmante", "Fecha Acreditación"]
     missing = [c for c in required_cols if c not in df.columns]
@@ -274,12 +292,14 @@ if uploaded_file:
         lambda row: "ACREDITADO" if row["Estado"] == "ACREDITADO" else "RECHAZADO", axis=1
     )
 
+    # Agrupamos ahora incluyendo el CUIT
     firmantes = (
-        df_firmantes.groupby(["Den. Firmante", "Tipo"])["Monto"]
+        df_firmantes.groupby(["CUIT", "Den. Firmante", "Tipo"])["Monto"]
         .sum()
         .unstack(fill_value=0)
         .reset_index()
     )
+    firmantes.columns.name = None # Limpiamos el nombre del índice generado por el unstack
 
     if "ACREDITADO" not in firmantes.columns: firmantes["ACREDITADO"] = 0
     if "RECHAZADO" not in firmantes.columns: firmantes["RECHAZADO"] = 0
@@ -288,6 +308,9 @@ if uploaded_file:
     firmantes["% Concentración"] = firmantes["Total_Firmante"] / total_operado * 100
 
     firmantes = firmantes.sort_values("Total_Firmante", ascending=False).reset_index(drop=True)
+    
+    # Reordenamos para que CUIT quede primero
+    firmantes = firmantes[["CUIT", "Den. Firmante", "ACREDITADO", "RECHAZADO", "Total_Firmante", "% Concentración"]]
 
     firmantes["ACREDITADO"] = firmantes["ACREDITADO"].apply(fmt_monto)
     firmantes["RECHAZADO"] = firmantes["RECHAZADO"].apply(fmt_monto)
@@ -306,7 +329,7 @@ if uploaded_file:
     # Tabla de firmantes SOLO PROBLEMAS FINANCIEROS
     # -----------------------------
     firmantes_prob_financieros = (
-        df[mask_prob_financieros].groupby("Den. Firmante")
+        df[mask_prob_financieros].groupby(["CUIT", "Den. Firmante"])
         .agg(
             Monto=("Monto", "sum"),
             Motivo_Rechazo=("Motivo Rechazo", lambda x: " | ".join(sorted(set(x.dropna().astype(str).str.strip()))))
@@ -316,14 +339,15 @@ if uploaded_file:
         .sort_values("Monto", ascending=False)
     )
 
-    firmantes_prob_financieros["% Concentración"] = firmantes_prob_financieros["Monto"] / rechazados_prob_financieros * 100 if rechazados_prob_financieros > 0 else 0
-    firmantes_prob_financieros["Monto"] = firmantes_prob_financieros["Monto"].apply(fmt_monto)
-    firmantes_prob_financieros["% Concentración"] = firmantes_prob_financieros["% Concentración"].apply(lambda x: f"{x:.2f}%")
+    if not firmantes_prob_financieros.empty:
+        firmantes_prob_financieros["% Concentración"] = firmantes_prob_financieros["Monto"] / rechazados_prob_financieros * 100 if rechazados_prob_financieros > 0 else 0
+        firmantes_prob_financieros["Monto"] = firmantes_prob_financieros["Monto"].apply(fmt_monto)
+        firmantes_prob_financieros["% Concentración"] = firmantes_prob_financieros["% Concentración"].apply(lambda x: f"{x:.2f}%")
+        
+        firmantes_prob_financieros = firmantes_prob_financieros[["CUIT", "Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
     
-    firmantes_prob_financieros = firmantes_prob_financieros[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
-
-    st.subheader("👤 Totales Rechazados por Firmante (solo rechazos por problemas financieros)")
-    mostrar_tabla_estilizada(firmantes_prob_financieros)
+        st.subheader("👤 Totales Rechazados por Firmante (solo rechazos por problemas financieros)")
+        mostrar_tabla_estilizada(firmantes_prob_financieros)
 
     # -----------------------------
     # VISOR DE CHEQUES POR FIRMANTE (GLOBAL)
@@ -339,19 +363,25 @@ if uploaded_file:
         df_firmante_especifico = df_firmantes[df_firmantes["Den. Firmante"] == firmante_seleccionado_global]
         df_crudos_firmante = preparar_datos_crudos(df_firmante_especifico)
         
-        # --- NUEVA CONSULTA DE ACTIVIDAD (ENFOQUE HÍBRIDO) ---
+        # --- LINK DE ACTIVIDAD ---
         if "CUIT" in df_crudos_firmante.columns and not df_crudos_firmante.empty:
             cuit_f = df_crudos_firmante["CUIT"].iloc[0]
             if cuit_f:
                 url_cuit = f"https://www.cuit.online/search.php?q={cuit_f}"
                 st.info(f"ℹ️ **CUIT:** {cuit_f} | 🌐 [Ver Actividad Económica y Estado Fiscal en Cuit.online]({url_cuit})")
-        # -----------------------------------------------------
+        # -------------------------
 
-        styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '18px', 'padding': '6px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
+        styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '18px', 'padding': '6px'})
+        if "Monto" in df_crudos_firmante.columns:
+            styled_crudos = styled_crudos.set_properties(subset=["Monto"], **{'text-align': 'right'})
+            
+        styled_crudos = styled_crudos.set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
+        
         st.dataframe(
             styled_crudos,
             use_container_width=True, 
             column_config={
+                "CUIT": st.column_config.TextColumn("CUIT"),
                 "Den. Firmante": st.column_config.TextColumn("Den. Firmante", width="large"),
                 "Motivo Rechazo": st.column_config.TextColumn("Motivo Rechazo", width="large")
             }
@@ -435,13 +465,17 @@ if uploaded_file:
                 lambda row: "ACREDITADO" if row["Estado"] == "ACREDITADO" else "RECHAZADO", axis=1
             )
 
-            firmantes_3m = df_firmantes_3m.groupby(["Den. Firmante", "Tipo"])["Monto"].sum().unstack(fill_value=0).reset_index()
+            firmantes_3m = df_firmantes_3m.groupby(["CUIT", "Den. Firmante", "Tipo"])["Monto"].sum().unstack(fill_value=0).reset_index()
+            firmantes_3m.columns.name = None
+
             if "ACREDITADO" not in firmantes_3m.columns: firmantes_3m["ACREDITADO"] = 0
             if "RECHAZADO" not in firmantes_3m.columns: firmantes_3m["RECHAZADO"] = 0
 
             firmantes_3m["Total_Firmante"] = firmantes_3m["ACREDITADO"] + firmantes_3m["RECHAZADO"]
             firmantes_3m["% Concentración"] = firmantes_3m["Total_Firmante"] / total_operado_3m * 100
             firmantes_3m = firmantes_3m.sort_values("Total_Firmante", ascending=False).reset_index(drop=True)
+            
+            firmantes_3m = firmantes_3m[["CUIT", "Den. Firmante", "ACREDITADO", "RECHAZADO", "Total_Firmante", "% Concentración"]]
 
             firmantes_3m_disp = firmantes_3m.copy()
             firmantes_3m_disp["ACREDITADO"] = firmantes_3m_disp["ACREDITADO"].apply(fmt_monto)
@@ -453,55 +487,6 @@ if uploaded_file:
             mostrar_tabla_estilizada(firmantes_3m_disp)
 
             firmantes_prob_financieros_3m = (
-                df_3m[mask_prob_financieros_3m].groupby("Den. Firmante")
+                df_3m[mask_prob_financieros_3m].groupby(["CUIT", "Den. Firmante"])
                 .agg(
-                    Monto=("Monto", "sum"),
-                    Motivo_Rechazo=("Motivo Rechazo", lambda x: " | ".join(sorted(set(x.dropna().astype(str).str.strip()))))
-                )
-                .reset_index()
-                .rename(columns={"Motivo_Rechazo": "Motivo del rechazo"})
-                .sort_values("Monto", ascending=False)
-            )
-
-            if not firmantes_prob_financieros_3m.empty:
-                firmantes_prob_financieros_3m["% Concentración"] = firmantes_prob_financieros_3m["Monto"] / rechazados_prob_financieros_3m * 100 if rechazados_prob_financieros_3m > 0 else 0
-                firmantes_prob_financieros_3m["Monto"] = firmantes_prob_financieros_3m["Monto"].apply(fmt_monto)
-                firmantes_prob_financieros_3m["% Concentración"] = firmantes_prob_financieros_3m["% Concentración"].apply(lambda x: f"{x:.2f}%")
-                
-                firmantes_prob_financieros_3m = firmantes_prob_financieros_3m[["Den. Firmante", "Monto", "% Concentración", "Motivo del rechazo"]]
-
-                st.subheader("👤 Totales Rechazados por Firmante (solo rechazos por problemas financieros) - Últimos 3 Meses")
-                mostrar_tabla_estilizada(firmantes_prob_financieros_3m)
-            else:
-                st.success("No hay rechazos financieros en los últimos 3 meses.")
-
-            # -----------------------------
-            # VISOR DE CHEQUES POR FIRMANTE (ÚLTIMOS 3 MESES)
-            # -----------------------------
-            st.markdown("---")
-            st.subheader("🔍 Visor Rápido de Cheques por Firmante (Últimos 3 Meses)")
-            
-            lista_firmantes_3m = sorted(df_firmantes_3m["Den. Firmante"].unique().tolist())
-            firmante_seleccionado_3m = st.selectbox("Elegí un Firmante (3 Meses):", ["-- Seleccionar Firmante --"] + lista_firmantes_3m, key="visor_3m")
-            
-            if firmante_seleccionado_3m != "-- Seleccionar Firmante --":
-                df_firmante_especifico_3m = df_firmantes_3m[df_firmantes_3m["Den. Firmante"] == firmante_seleccionado_3m]
-                df_crudos_firmante_3m = preparar_datos_crudos(df_firmante_especifico_3m)
-                
-                # --- NUEVA CONSULTA DE ACTIVIDAD EN VISOR 3M (ENFOQUE HÍBRIDO) ---
-                if "CUIT" in df_crudos_firmante_3m.columns and not df_crudos_firmante_3m.empty:
-                    cuit_f_3m = df_crudos_firmante_3m["CUIT"].iloc[0]
-                    if cuit_f_3m:
-                        url_cuit_3m = f"https://www.cuit.online/search.php?q={cuit_f_3m}"
-                        st.info(f"ℹ️ **CUIT:** {cuit_f_3m} | 🌐 [Ver Actividad Económica y Estado Fiscal en Cuit.online]({url_cuit_3m})")
-                # -----------------------------------------------------------------
-
-                styled_crudos_3m = df_crudos_firmante_3m.style.set_properties(**{'font-size': '18px', 'padding': '6px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
-                st.dataframe(
-                    styled_crudos_3m,
-                    use_container_width=True, 
-                    column_config={
-                        "Den. Firmante": st.column_config.TextColumn("Den. Firmante", width="large"),
-                        "Motivo Rechazo": st.column_config.TextColumn("Motivo Rechazo", width="large")
-                    }
-                )
+                    Monto=("Monto", "
