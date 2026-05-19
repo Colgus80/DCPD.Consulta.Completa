@@ -154,7 +154,7 @@ def preparar_datos_crudos(df_in):
         df_out["Monto"] = df_out["Monto"].apply(fmt_monto)
     if "CUIT" in df_out.columns:
         # Convierte a texto, corta en el punto si hay decimales, y limpia los vacíos
-        df_out["CUIT"] = df_out["CUIT"].astype(str).str.split('.').str[0].replace('nan', '')
+        df_out["CUIT"] = df_out["CUIT"].astype(str).str.split('.').str[0].replace('nan', '').str.strip()
         
     orden_ideal = ["Den. Socio", "Tipo Op.", "CUIT", "Den. Firmante", "Monto", "Fecha Acreditación", "Estado", "Motivo Rechazo"]
     orden_final = [col for col in orden_ideal if col in df_out.columns]
@@ -185,7 +185,7 @@ if uploaded_file:
     df["Tipo Op."] = df["Tipo Op."].astype(str).str.strip().str.replace('"', '')
     df = df[df["Tipo Op."] == "CO"].copy()
 
-    # --- VALIDACIÓN NUEVA: COMPROBAR SI HAY OPERACIONES DE COMPRA (CO) ---
+    # --- VALIDACIÓN: COMPROBAR SI HAY OPERACIONES DE COMPRA (CO) ---
     if df.empty:
         st.markdown(
             "<div style='font-size:20px; font-weight:bold; color:blue; padding:10px; background-color:#e6f2ff; border-radius:5px; border-left:5px solid blue;'>"
@@ -193,7 +193,6 @@ if uploaded_file:
             "</div>", unsafe_allow_html=True
         )
         st.stop()
-    # -----------------------------------------------------------------------
 
     if "Motivo Rechazo" not in df.columns:
         df["Motivo Rechazo"] = ""
@@ -214,7 +213,6 @@ if uploaded_file:
     mask_prob_financieros = mask_rechazo & df["Motivo Rechazo"].str.contains(r"R01|R02|R10|R21", na=False, regex=True)
     rechazados_prob_financieros = df.loc[mask_prob_financieros, "Monto"].sum()
 
-    # Total operado = acreditado + rechazado por problemas financieros
     total_operado = total_acreditado + rechazados_prob_financieros
 
     pct_acreditado = (total_acreditado / total_operado * 100) if total_operado > 0 else 0.0
@@ -251,25 +249,22 @@ if uploaded_file:
     cant_prob_financieros = len(df[mask_prob_financieros])
 
     col1, col2, col3 = st.columns(3)
-
     with col1:
         st.metric("📦 Total Operado", fmt_monto(total_operado))
         st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_total_operado}</b></div>", unsafe_allow_html=True)
-
     with col2:
         st.metric("💰 Total Acreditado", fmt_monto(total_acreditado))
         st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_acreditados}</b></div>", unsafe_allow_html=True)
-
     with col3:
         st.metric("❌ Rechazados", fmt_monto(rechazados_prob_financieros))
         st.markdown(f"<div style='font-size:14px; color:gray;'>Cantidad de cheques: <b>{cant_prob_financieros}</b></div>", unsafe_allow_html=True)
 
     # -----------------------------
-    # % Acreditado y Rechazado (SIN CÓDIGOS)
+    # % Acreditado y Rechazado
     # -----------------------------
     colA, colB = st.columns(2)
     colA.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>✅ % Acreditado: {pct_acreditado:.2f}%</div>", unsafe_allow_html=True)
-    colB.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros:.2f}%</div>", unsafe_allow_html=True)
+    colB.markdown(f"<div style='font-size:26px; font-weight:bold; color:red; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros:.2f}%</div>", unsafe_allow_html=True)
 
     # -----------------------------
     # Tabla de firmantes (Acreditados + Problemas Financieros)
@@ -302,14 +297,13 @@ if uploaded_file:
     st.subheader("👤 Top 10 Firmantes (sobre total operado)")
     mostrar_tabla_estilizada(firmantes)
 
-    # FRASE RESUMEN GLOBAL DINÁMICA
     if rechazados_prob_financieros == 0:
         st.info(f"**Descontó {cant_total_operado} valores por un total de {fmt_monto(total_operado)} sin registrar rechazos.**")
     else:
         st.info(f"**Descontó {cant_total_operado} valores por un total de {fmt_monto(total_operado)} con un margen de rechazos del {pct_prob_financieros:.2f}%.**")
 
     # -----------------------------
-    # Tabla de firmantes SOLO PROBLEMAS FINANCIEROS (TÍTULO ACTUALIZADO)
+    # Tabla de firmantes SOLO PROBLEMAS FINANCIEROS
     # -----------------------------
     firmantes_prob_financieros = (
         df[mask_prob_financieros].groupby("Den. Firmante")
@@ -345,6 +339,14 @@ if uploaded_file:
         df_firmante_especifico = df_firmantes[df_firmantes["Den. Firmante"] == firmante_seleccionado_global]
         df_crudos_firmante = preparar_datos_crudos(df_firmante_especifico)
         
+        # --- NUEVA CONSULTA DE ACTIVIDAD (ENFOQUE HÍBRIDO) ---
+        if "CUIT" in df_crudos_firmante.columns and not df_crudos_firmante.empty:
+            cuit_f = df_crudos_firmante["CUIT"].iloc[0]
+            if cuit_f:
+                url_cuit = f"https://www.cuit.online/search.php?q={cuit_f}"
+                st.info(f"ℹ️ **CUIT:** {cuit_f} | 🌐 [Ver Actividad Económica y Estado Fiscal en Cuit.online]({url_cuit})")
+        # -----------------------------------------------------
+
         styled_crudos = df_crudos_firmante.style.set_properties(**{'font-size': '18px', 'padding': '6px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
         st.dataframe(
             styled_crudos,
@@ -368,7 +370,6 @@ if uploaded_file:
         mask_fechas_3m = (fechas_dt >= min_date_3m) & (fechas_dt <= fecha_actual)
         df_3m = df[mask_fechas_3m].copy()
         
-        # BUSCAR R01, R02, R10 Y R21 EN 3 MESES
         mask_prob_financieros_3m = (df_3m["Estado"] == "RECHAZADO") & df_3m["Motivo Rechazo"].str.contains(r"R01|R02|R10|R21", na=False, regex=True)
         total_acreditado_3m = df_3m.loc[df_3m["Estado"] == "ACREDITADO", "Monto"].sum()
         rechazados_prob_financieros_3m = df_3m.loc[mask_prob_financieros_3m, "Monto"].sum()
@@ -377,7 +378,6 @@ if uploaded_file:
         pct_acreditado_3m = (total_acreditado_3m / total_operado_3m * 100) if total_operado_3m > 0 else 0.0
         pct_prob_financieros_3m = (rechazados_prob_financieros_3m / total_operado_3m * 100) if total_operado_3m > 0 else 0.0
 
-        # El título siempre aparece si hubo un rechazo global
         st.markdown(
             f"""
             <div style="font-size:24px; font-weight:bold; color:#d62728; margin-bottom:10px;">
@@ -386,10 +386,8 @@ if uploaded_file:
             """, unsafe_allow_html=True
         )
 
-        # Evaluar los 3 escenarios
         if total_operado_3m == 0:
             st.info("Durante los últimos 3 meses no ha registrado operatoria en DCPD")
-            
         else:
             if rechazados_prob_financieros_3m == 0:
                 st.info(f"Durante los últimos 3 meses la operatoria en DCPD totalizó **{fmt_monto(total_operado_3m)}**, sin registrar rechazos.")
@@ -413,7 +411,6 @@ if uploaded_file:
 
                 st.info(f"**Durante los últimos 3 meses la operatoria en DCPD totalizó {fmt_monto(total_operado_3m)}, con un margen de rechazos del {pct_prob_financieros_3m:.2f}%, concentrados en los meses de {str_meses}.**")
 
-            # Renderizamos las métricas y cuadros correspondientes a los 3 meses
             cant_total_operado_3m = len(df_3m[(df_3m["Estado"] == "ACREDITADO") | mask_prob_financieros_3m])
             cant_acreditados_3m = len(df_3m[df_3m["Estado"] == "ACREDITADO"])
             cant_prob_financieros_3m = len(df_3m[mask_prob_financieros_3m])
@@ -431,9 +428,8 @@ if uploaded_file:
 
             colA_3m, colB_3m = st.columns(2)
             colA_3m.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>✅ % Acreditado: {pct_acreditado_3m:.2f}%</div>", unsafe_allow_html=True)
-            colB_3m.markdown(f"<div style='font-size:26px; font-weight:bold; color:green; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros_3m:.2f}%</div>", unsafe_allow_html=True)
+            colB_3m.markdown(f"<div style='font-size:26px; font-weight:bold; color:red; margin: 0px;'>❌ % Rechazados: {pct_prob_financieros_3m:.2f}%</div>", unsafe_allow_html=True)
 
-            # Tabla de firmantes (Acreditados + Problemas Financieros) - 3M
             df_firmantes_3m = df_3m[(df_3m["Estado"] == "ACREDITADO") | mask_prob_financieros_3m].copy()
             df_firmantes_3m["Tipo"] = df_firmantes_3m.apply(
                 lambda row: "ACREDITADO" if row["Estado"] == "ACREDITADO" else "RECHAZADO", axis=1
@@ -456,7 +452,6 @@ if uploaded_file:
             st.subheader("👤 Top 10 Firmantes (sobre total operado) - Últimos 3 Meses")
             mostrar_tabla_estilizada(firmantes_3m_disp)
 
-            # Tabla de firmantes SOLO PROBLEMAS FINANCIEROS - 3M
             firmantes_prob_financieros_3m = (
                 df_3m[mask_prob_financieros_3m].groupby("Den. Firmante")
                 .agg(
@@ -493,10 +488,18 @@ if uploaded_file:
                 df_firmante_especifico_3m = df_firmantes_3m[df_firmantes_3m["Den. Firmante"] == firmante_seleccionado_3m]
                 df_crudos_firmante_3m = preparar_datos_crudos(df_firmante_especifico_3m)
                 
+                # --- NUEVA CONSULTA DE ACTIVIDAD EN VISOR 3M (ENFOQUE HÍBRIDO) ---
+                if "CUIT" in df_crudos_firmante_3m.columns and not df_crudos_firmante_3m.empty:
+                    cuit_f_3m = df_crudos_firmante_3m["CUIT"].iloc[0]
+                    if cuit_f_3m:
+                        url_cuit_3m = f"https://www.cuit.online/search.php?q={cuit_f_3m}"
+                        st.info(f"ℹ️ **CUIT:** {cuit_f_3m} | 🌐 [Ver Actividad Económica y Estado Fiscal en Cuit.online]({url_cuit_3m})")
+                # -----------------------------------------------------------------
+
                 styled_crudos_3m = df_crudos_firmante_3m.style.set_properties(**{'font-size': '18px', 'padding': '6px'}).set_table_styles([{'selector': 'th', 'props': [('font-size', '18px')]}])
                 st.dataframe(
                     styled_crudos_3m,
-                    use_container_width=True, # Ajuste para expandir
+                    use_container_width=True, 
                     column_config={
                         "Den. Firmante": st.column_config.TextColumn("Den. Firmante", width="large"),
                         "Motivo Rechazo": st.column_config.TextColumn("Motivo Rechazo", width="large")
