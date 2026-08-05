@@ -3,5 +3,3 @@ pandas
 openpyxl
 xlrd
 pyxlsb
-requests
-beautifulsoup4
