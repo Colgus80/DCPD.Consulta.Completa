@@ -3,3 +3,4 @@ pandas
 openpyxl
 xlrd
 pyxlsb
+starlette<1.4.0
